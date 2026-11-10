@@ -369,6 +369,10 @@ class RouteActivity : ComponentActivity() {
                                 )
                             }
 
+                            entry<Screen.AssistantCalendar> { key ->
+                                me.rerere.rikkahub.ui.pages.chat.AssistantCalendarPage(assistantId = Uuid.parse(key.assistantId))
+                            }
+
                             entry<Screen.AutonomousActivity> { key ->
                                 AutonomousActivityPage(assistantId = Uuid.parse(key.assistantId))
                             }
@@ -695,6 +699,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class AutonomousActivity(val assistantId: String) : Screen
+
+    @Serializable
+    data class AssistantCalendar(val assistantId: String) : Screen
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen

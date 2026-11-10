@@ -31,6 +31,7 @@ enum class UsageSource {
     OCR,
     AUTONOMOUS_WAKEUP,
     ASSISTANT_STATUS,
+    CALENDAR,
 }
 
 /** 记录用量时附带的归属信息 */

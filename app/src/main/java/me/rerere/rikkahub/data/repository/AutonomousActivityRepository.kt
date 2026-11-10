@@ -30,6 +30,16 @@ class AutonomousActivityRepository(
         )
     }
 
+    fun observeRange(
+        assistantId: Uuid,
+        startInclusive: Long,
+        endExclusive: Long,
+    ): Flow<List<AutonomousActivityEntity>> = database.autonomousActivityDao().observeRange(
+        assistantId = assistantId.toString(),
+        startInclusive = startInclusive,
+        endExclusive = endExclusive,
+    )
+
     fun observeActivities(assistantId: Uuid): Flow<PagingData<AutonomousActivityEntity>> = Pager(
         config = PagingConfig(pageSize = 30),
         pagingSourceFactory = { database.autonomousActivityDao().pagingSource(assistantId.toString()) }

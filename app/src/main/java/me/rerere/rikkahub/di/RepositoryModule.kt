@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.repository.AssistantCalendarRepository
 import me.rerere.rikkahub.data.repository.AutonomousActivityRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
@@ -24,6 +25,10 @@ import org.koin.dsl.onClose
 import java.io.File
 
 val repositoryModule = module {
+    single {
+        AssistantCalendarRepository(database = get())
+    }
+
     single {
         AutonomousActivityRepository(database = get())
     }

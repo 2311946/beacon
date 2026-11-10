@@ -44,6 +44,14 @@ val viewModelModule = module {
             favoriteRepository = get(),
         )
     }
+    viewModel<me.rerere.rikkahub.ui.pages.chat.AssistantCalendarVM> { params ->
+        me.rerere.rikkahub.ui.pages.chat.AssistantCalendarVM(
+            assistantId = params.get(),
+            repository = get(),
+            activities = get(),
+            generator = get(),
+        )
+    }
     viewModelOf(::ChatDrawerVM)
     viewModelOf(::SettingVM)
     viewModelOf(::DebugVM)

@@ -437,6 +437,9 @@ private fun ChatPageContent(
                     onOpenActivityLog = {
                         navController.navigate(Screen.AutonomousActivity(assistant.id.toString()))
                     },
+                    onOpenCalendar = {
+                        navController.navigate(Screen.AssistantCalendar(assistant.id.toString()))
+                    },
                     onUpdateTitle = {
                         vm.updateTitle(it)
                     }
@@ -687,6 +690,7 @@ private fun TopBar(
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onOpenActivityLog: () -> Unit,
+    onOpenCalendar: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -770,6 +774,13 @@ private fun TopBar(
                     onDismissRequest = { showTitleMenu = false },
                 ) {
                     DropdownMenuItem(
+                        text = { Text("日历") },
+                        onClick = {
+                            showTitleMenu = false
+                            onOpenCalendar()
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text("活动记录") },
                         onClick = {
                             showTitleMenu = false
@@ -780,6 +791,7 @@ private fun TopBar(
             }
         },
         actions = {
+            TextButton(onClick = onOpenCalendar) { Text("日历") }
             IconButton(onClick = onStartVoiceCall) {
                 Icon(VoiceCallPhoneIcon, contentDescription = "语音通话")
             }

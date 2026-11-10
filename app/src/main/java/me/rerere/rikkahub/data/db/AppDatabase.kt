@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import me.rerere.ai.core.TokenUsage
+import me.rerere.rikkahub.data.db.dao.AssistantCalendarDAO
 import me.rerere.rikkahub.data.db.dao.AutonomousActivityDAO
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
@@ -19,6 +20,7 @@ import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.TranslationHistoryDAO
 import me.rerere.rikkahub.data.db.dao.UsageRecordDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
+import me.rerere.rikkahub.data.db.entity.AssistantCalendarDayEntity
 import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
@@ -57,8 +59,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         TranslationHistoryEntity::class,
         UsageRecordEntity::class,
         AutonomousActivityEntity::class,
+        AssistantCalendarDayEntity::class,
     ],
-    version = 33,
+    version = 34,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -113,6 +116,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun usageRecordDao(): UsageRecordDAO
 
     abstract fun autonomousActivityDao(): AutonomousActivityDAO
+
+    abstract fun assistantCalendarDao(): AssistantCalendarDAO
 }
 
 object TokenUsageConverter {

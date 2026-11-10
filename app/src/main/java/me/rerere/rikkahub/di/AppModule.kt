@@ -112,6 +112,16 @@ val appModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.ai.AssistantCalendarGenerator(
+            context = get(),
+            settingsStore = get(),
+            providerManager = get(),
+            usageRecorder = get(),
+            repository = get(),
+        )
+    }
+
+    single {
         ChatRequestFactory(
             context = get(),
             providerManager = get(),
