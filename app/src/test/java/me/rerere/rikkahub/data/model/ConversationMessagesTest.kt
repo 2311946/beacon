@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.data.model
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
@@ -130,6 +135,41 @@ class ConversationMessagesTest {
 
         assertNull(conversation.cancelInterruptedTools())
         assertNull(Conversation.ofId(Uuid.random()).cancelInterruptedTools())
+    }
+
+    @Test
+    fun `voice call metadata preserves provider fields and survives serialization`() {
+        val source = UIMessage.assistant("hello").copy(parts = listOf(
+            UIMessagePart.Reasoning("thinking", metadata = JsonObject(mapOf("signature" to JsonPrimitive("sig")))),
+            UIMessagePart.Text("hello", JsonObject(mapOf("beacon_current_status" to JsonPrimitive("聊天")))),
+        ))
+        val marked = source.withVoiceCallMetadata("call-1")
+        assertTrue(marked.isVoiceCallMessage())
+        assertEquals("call-1", marked.voiceCallIdOrNull())
+        assertEquals(JsonPrimitive("sig"), marked.parts.first().metadata?.get("signature"))
+        assertEquals(JsonPrimitive("聊天"), marked.parts.last().metadata?.get("beacon_current_status"))
+        assertEquals("hello", marked.toText())
+        assertNull(source.voiceCallIdOrNull())
+        val restored = Json.decodeFromString<UIMessage>(Json.encodeToString(marked))
+        assertEquals("call-1", restored.voiceCallIdOrNull())
+        // 后续流式快照不依赖先前快照的 metadata。
+        assertEquals("call-1", source.copy(parts = listOf(UIMessagePart.Text("hello again")))
+            .withVoiceCallMetadata("call-1").voiceCallIdOrNull())
+    }
+
+    @Test
+    fun `voice call preview uses first sentence without reasoning or tool output`() {
+        val message = UIMessage.assistant("你好！第二句话。尾句").copy(parts = listOf(
+            UIMessagePart.Reasoning("private reasoning"),
+            UIMessagePart.Text("你好！第二句话。尾句"),
+            UIMessagePart.Tool("id", "search", "{}", output = listOf(UIMessagePart.Text("tool secret"))),
+        ))
+        assertEquals("你好！", message.voiceCallPreview())
+        assertEquals("Hello.", UIMessage.user("Hello. Next sentence.").voiceCallPreview())
+        assertEquals("第一行", UIMessage.user("第一行\n第二行").voiceCallPreview())
+        assertEquals("语音通话消息", UIMessage.assistant("").voiceCallPreview())
+        val preview = UIMessage.user("📞".repeat(80)).voiceCallPreview()
+        assertEquals("📞".repeat(60) + "…", preview)
     }
 
     private fun conversationOf(vararg nodes: MessageNode) =

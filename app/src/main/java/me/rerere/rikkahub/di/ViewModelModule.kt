@@ -5,6 +5,10 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatDrawerVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
+import me.rerere.rikkahub.ui.pages.chat.GroupChatListVM
+import me.rerere.rikkahub.ui.pages.chat.GroupChatSettingsVM
+import me.rerere.rikkahub.ui.pages.setting.ProactiveMessageSettingsVM
+import me.rerere.rikkahub.ui.pages.chat.GroupChatVM
 import me.rerere.rikkahub.ui.pages.debug.DebugVM
 import me.rerere.rikkahub.ui.pages.extensions.PromptVM
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesVM
@@ -36,7 +40,6 @@ val viewModelModule = module {
             settingsStore = get(),
             chatService = get(),
             updateChecker = get(),
-            analytics = get(),
             filesManager = get(),
             favoriteRepository = get(),
         )
@@ -46,6 +49,25 @@ val viewModelModule = module {
     viewModelOf(::DebugVM)
     viewModelOf(::HistoryVM)
     viewModelOf(::AssistantVM)
+    viewModelOf(::GroupChatListVM)
+    viewModel<GroupChatVM> { params ->
+        GroupChatVM(
+            groupId = params.get(),
+            settingsStore = get(),
+            chatService = get(),
+            groupChatService = get(),
+        )
+    }
+    viewModel<GroupChatSettingsVM> { params ->
+        GroupChatSettingsVM(
+            groupId = params.get(),
+            settingsStore = get(),
+            conversationRepo = get(),
+            chatService = get(),
+            groupChatService = get(),
+        )
+    }
+    viewModelOf(::ProactiveMessageSettingsVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
             id = it.get(),

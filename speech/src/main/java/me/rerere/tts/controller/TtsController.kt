@@ -37,7 +37,8 @@ private const val SYNTHESIS_RETRY_BASE_DELAY_MS = 500L
  */
 class TtsController(
     context: Context,
-    private val ttsManager: TTSManager
+    private val ttsManager: TTSManager,
+    forVoiceCall: Boolean = false,
 ) {
     // 协程作用域
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -45,7 +46,7 @@ class TtsController(
     // 组件
     private val chunker = TextChunker(maxChunkLength = 160)
     private val synthesizer = TtsSynthesizer(ttsManager)
-    private val audio = AudioPlayer(context)
+    private val audio = AudioPlayer(context, forVoiceCall)
 
     // Provider & 作业
     private var currentProvider: TTSProviderSetting? = null

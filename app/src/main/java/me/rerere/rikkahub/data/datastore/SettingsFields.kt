@@ -119,7 +119,15 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         // 助手
         uuid(SELECT_ASSISTANT, Settings::assistantId) { copy(assistantId = it) },
         json(ASSISTANTS, Settings::assistants) { copy(assistants = it) },
+        json(ASSISTANT_STATUSES, Settings::assistantStatuses) { copy(assistantStatuses = it) },
         json(ASSISTANT_TAGS, Settings::assistantTags) { copy(assistantTags = it) },
+
+        // 群聊
+        json(GROUP_CHATS, Settings::groupChats) { copy(groupChats = it) },
+        json(GROUP_CHAT_DEFAULTS, Settings::groupChatDefaults) { copy(groupChatDefaults = it) },
+
+        // 自主唤醒
+        json(AUTONOMOUS_WAKEUP, Settings::autonomousWakeup) { copy(autonomousWakeup = it) },
 
         // 搜索
         json(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
@@ -138,6 +146,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 媒体生成
         json(MEDIA_GENERATION_PROVIDERS, Settings::mediaGenerationProviders) { copy(mediaGenerationProviders = it) },
+        json(androidx.datastore.preferences.core.stringPreferencesKey("chat_image_generation"), Settings::chatImageGeneration) { copy(chatImageGeneration = it) },
 
         // TTS
         json(TTS_PROVIDERS, Settings::ttsProviders) { copy(ttsProviders = it) },

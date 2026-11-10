@@ -9,9 +9,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.baselineprofile)
+}
+
+// 本地无 Firebase 配置时用 -PbeaconWithoutFirebase=true，不能只用 -x 跳过
+// GoogleServices 任务，否则 AGP 仍会读取它尚未生成的资源输出。
+val beaconWithoutFirebase = providers.gradleProperty("beaconWithoutFirebase")
+    .map { it.toBooleanStrict() }
+    .getOrElse(false)
+if (!beaconWithoutFirebase) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 android {
@@ -23,7 +33,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "me.rerere.rikkahub"
+        applicationId = "me.xuanxuan.beacon"
         minSdk = 26
         targetSdk = 37
         versionCode = 194

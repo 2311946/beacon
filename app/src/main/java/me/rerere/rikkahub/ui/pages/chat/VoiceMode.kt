@@ -39,11 +39,19 @@ import org.koin.compose.koinInject
 
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable
-fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
+fun rememberVoiceModeStarter(
+    vm: ChatVM,
+    settings: Settings,
+    forCall: Boolean = false,
+    onStarted: () -> Unit = {},
+): () -> Unit {
     val context = LocalContext.current.applicationContext
     val client = koinInject<OkHttpClient>()
     val asr = LocalASRState.current
-    val tts = LocalTTSState.current
+    val globalTts = LocalTTSState.current
+    val tts = if (forCall) me.rerere.rikkahub.ui.hooks.rememberVoiceCallTtsState(settings) else globalTts
+    val ttsProvider = if (forCall) settings.displaySetting.voiceCallTtsProvider
+        ?: settings.getSelectedTTSProvider() else settings.getSelectedTTSProvider()
     val toaster = LocalToaster.current
     val permission = rememberPermissionState(PermissionRecordAudio)
     PermissionManager(permission)
@@ -52,7 +60,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     val provider = settings.getSelectedASRProvider()
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    DisposableEffect(voice, lifecycleOwner, provider, settings.getSelectedTTSProvider()) {
+    DisposableEffect(voice, lifecycleOwner, provider, ttsProvider) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) voice.stop()
         }
@@ -65,6 +73,8 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
 
     val start: () -> Unit = {
         val blocked = when {
+            voice.state.value.isActive -> "请先结束当前语音会话"
+            forCall && !tts.isAvailable.value -> "请先在通话设置中配置可用的 TTS 服务和音色"
             provider == null -> context.getString(R.string.chat_page_voice_configure_asr)
             !provider.supportsServerVadVoiceMode -> context.getString(R.string.chat_page_voice_unsupported_asr)
             vm.currentChatModel.value == null -> context.getString(R.string.chat_page_voice_select_model)
@@ -79,39 +89,43 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
         when {
             blocked != null -> toaster.show(message = blocked)
             !permission.allRequiredPermissionsGranted -> permission.requestPermissions()
-            else -> voice.start(
-                createAsr = { createVoiceAsr(context, client, checkNotNull(provider)) },
-                speak = if (tts.isAvailable.value) {
-                    { reply ->
-                        var text = reply
-                        if (settings.displaySetting.ttsOnlyReadQuoted) {
-                            text = text.extractQuotedContentAsText() ?: text
+            else -> {
+                if (forCall) globalTts.stop()
+                voice.start(
+                    createAsr = { createVoiceAsr(context, client, checkNotNull(provider)) },
+                    speak = if (tts.isAvailable.value) {
+                        { reply ->
+                            var text = reply
+                            if (settings.displaySetting.ttsOnlyReadQuoted) {
+                                text = text.extractQuotedContentAsText() ?: text
+                            }
+                            if (settings.displaySetting.ttsOnlyReadOutsideBrackets) {
+                                text = text.removeBracketedContent() ?: text
+                            }
+                            // speak strips markdown once; a second pass could discard decoded entities.
+                            if (text.stripMarkdown().isNotBlank()) {
+                                tts.speak(text)
+                                // Ended also occurs between chunks; wait for the entire playback worker.
+                                combine(tts.isSpeaking, tts.error) { speaking, error ->
+                                    check(error == null) { error.orEmpty() }
+                                    !speaking
+                                }.first { it }
+                            }
                         }
-                        if (settings.displaySetting.ttsOnlyReadOutsideBrackets) {
-                            text = text.removeBracketedContent() ?: text
-                        }
-                        // tts.speak() strips markdown itself; stripping twice would turn decoded
-                        // entities like &lt;tag&gt; into real tags and drop them.
-                        if (text.stripMarkdown().isNotBlank()) {
-                            tts.speak(text)
-                            // playbackState.Ended is also emitted between chunks. isSpeaking
-                            // remains true until the entire synthesis/playback queue finishes.
-                            combine(tts.isSpeaking, tts.error) { speaking, error ->
-                                check(error == null) { error.orEmpty() }
-                                !speaking
-                            }.first { it }
-                        }
-                    }
-                } else {
-                    null
-                },
-                stopSpeaking = tts::stop,
-                listenWhileReplying = settings.displaySetting.voiceModeListenWhileReplying,
-            )
+                    } else {
+                        null
+                    },
+                    stopSpeaking = tts::stop,
+                    listenWhileReplying = !forCall && settings.displaySetting.voiceModeListenWhileReplying,
+                    forCall = forCall,
+                    onCallStateChanged = vm::setActiveVoiceCall,
+                )
+                if (voice.state.value.isActive) onStarted()
+            }
         }
     }
 
-    if (state.isActive) {
+    if (state.isActive && !forCall) {
         val view = LocalView.current
         DisposableEffect(view) {
             val previous = view.keepScreenOn

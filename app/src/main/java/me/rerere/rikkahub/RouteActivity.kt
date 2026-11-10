@@ -90,6 +90,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantMemoryPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantPromptPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
+import me.rerere.rikkahub.ui.pages.chat.AutonomousActivityPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
@@ -105,6 +106,10 @@ import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceSshEditorPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.ui.pages.favorite.FavoritePage
+import me.rerere.rikkahub.ui.pages.chat.GroupChatListPage
+import me.rerere.rikkahub.ui.pages.chat.GroupChatPage
+import me.rerere.rikkahub.ui.pages.chat.GroupChatSettingsPage
+import me.rerere.rikkahub.ui.pages.setting.ProactiveMessageSettingsPage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
@@ -132,6 +137,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
+import me.rerere.rikkahub.ui.pages.setting.SettingStickersPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
@@ -363,6 +369,10 @@ class RouteActivity : ComponentActivity() {
                                 )
                             }
 
+                            entry<Screen.AutonomousActivity> { key ->
+                                AutonomousActivityPage(assistantId = Uuid.parse(key.assistantId))
+                            }
+
                             entry<Screen.ShareHandler> { key ->
                                 ShareHandlerPage(
                                     text = key.text,
@@ -372,6 +382,26 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.History> {
                                 HistoryPage()
+                            }
+
+                            entry<Screen.GroupChatList> {
+                                GroupChatListPage()
+                            }
+
+                            entry<Screen.GroupChat> { key ->
+                                GroupChatPage(key.groupId)
+                            }
+
+                            entry<Screen.GroupChatSettings> { key ->
+                                GroupChatSettingsPage(key.groupId)
+                            }
+
+                            entry<Screen.GroupChatDefaults> {
+                                GroupChatSettingsPage()
+                            }
+
+                            entry<Screen.SettingProactiveMessage> {
+                                ProactiveMessageSettingsPage()
                             }
 
                             entry<Screen.Favorite> {
@@ -533,6 +563,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingFilesPage()
                             }
 
+                            entry<Screen.SettingStickers> {
+                                SettingStickersPage()
+                            }
+
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
                             }
@@ -660,6 +694,9 @@ sealed interface Screen : NavKey {
     ) : Screen
 
     @Serializable
+    data class AutonomousActivity(val assistantId: String) : Screen
+
+    @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
 
     @Serializable
@@ -781,6 +818,9 @@ sealed interface Screen : NavKey {
     data object SettingFiles : Screen
 
     @Serializable
+    data object SettingStickers : Screen
+
+    @Serializable
     data object SettingWeb : Screen
 
     @Serializable
@@ -825,4 +865,22 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Stats : Screen
+
+    @Serializable
+    data object GroupChatList : Screen
+
+    /** [groupId] 为 GroupChat 的 id */
+    @Serializable
+    data class GroupChat(val groupId: String) : Screen
+
+    /** [groupId] 为 GroupChat 的 id */
+    @Serializable
+    data class GroupChatSettings(val groupId: String) : Screen
+
+    @Serializable
+    data object GroupChatDefaults : Screen
+
+    /** 自主唤醒设置 */
+    @Serializable
+    data object SettingProactiveMessage : Screen
 }

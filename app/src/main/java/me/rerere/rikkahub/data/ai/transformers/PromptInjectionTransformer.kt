@@ -20,12 +20,11 @@ object PromptInjectionTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        return transformMessages(
-            messages = messages,
-            assistant = ctx.assistant,
-            modeInjections = ctx.settings.modeInjections,
-            lorebooks = ctx.settings.lorebooks,
-        )
+        // 固定模式仍保持配置的位置；依赖历史触发的世界书只作为本轮用户上下文。
+        val fixed = transformMessages(messages, ctx.assistant, ctx.settings.modeInjections, emptyList())
+        val dynamic = collectInjections(messages, ctx.assistant, emptyList(), ctx.settings.lorebooks)
+            .sortedWith(compareByDescending<PromptInjection> { it.priority }.thenBy { it.id.toString() })
+        return appendUserContext(fixed, dynamic.joinToString("\n") { it.content })
     }
 }
 
@@ -81,7 +80,7 @@ internal fun collectInjections(
     }
     if (enabledLorebooks.isNotEmpty()) {
         // 提取上下文用于匹配（只取非 SYSTEM 消息）
-        val nonSystemMessages = messages.filter { it.role != MessageRole.SYSTEM }
+        val nonSystemMessages = messages.filter { it.role != MessageRole.SYSTEM && !it.isSynthetic }
 
         enabledLorebooks.forEach { lorebook ->
             lorebook.entries

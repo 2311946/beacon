@@ -336,6 +336,144 @@ class VoiceSessionControllerTest {
         } finally { rig.close() }
     }
 
+    @Test fun `mute discards unfinished speech and unmute creates a fresh recorder`() = runBlocking<Unit> {
+        val rig = Rig()
+        try {
+            rig.start(listenWhileReplying = false)
+            val first = rig.recorder()
+            first.begin()
+            first.state.value = first.state.value.copy(transcript = "unfinished", amplitudes = listOf(0.2f, 0.8f))
+            awaitCondition { rig.voice.state.value.amplitudes.isNotEmpty() }
+            rig.voice.setMuted(true)
+            awaitCondition { first.disposed }
+            first.end("stale result")
+            delay(30)
+            assertTrue(rig.voice.state.value.isMuted)
+            assertTrue(rig.voice.state.value.amplitudes.isEmpty())
+            assertTrue(rig.replies.isEmpty())
+            assertEquals(1, rig.asrs.size)
+            rig.voice.setMuted(false)
+            val second = rig.recorder(first)
+            second.end("fresh result")
+            awaitCondition { rig.replies.size == 1 }
+            assertEquals("fresh result", (rig.queue.state.value.messages.single().parts.single() as UIMessagePart.Text).text)
+        } finally { rig.close() }
+    }
+
+    @Test fun `mute during final transcription never submits its late result`() = runBlocking<Unit> {
+        val rig = Rig()
+        try {
+            rig.start()
+            val first = rig.recorder()
+            first.end()
+            awaitCondition { rig.voice.state.value.phase == VoicePhase.Transcribing }
+            rig.voice.setMuted(true)
+            first.end("late final")
+            awaitCondition { first.disposed }
+            assertTrue(rig.replies.isEmpty())
+            rig.voice.setMuted(false)
+            rig.recorder(first)
+        } finally { rig.close() }
+    }
+
+    @Test fun `muted call still plays accepted reply but does not reopen capture`() = runBlocking<Unit> {
+        val rig = Rig()
+        try {
+            rig.start(listenWhileReplying = false)
+            val first = rig.recorder()
+            first.end("hello")
+            awaitCondition { rig.voice.state.value.phase == VoicePhase.Waiting }
+            rig.voice.setMuted(true)
+            rig.replies.single().complete("reply")
+            awaitCondition { rig.voice.state.value.phase == VoicePhase.Speaking }
+            assertEquals("reply", rig.voice.state.value.lastReply)
+            rig.playback.complete(Unit)
+            awaitCondition { rig.voice.state.value.phase == VoicePhase.Waiting }
+            assertTrue(rig.voice.state.value.isMuted)
+            assertEquals(1, rig.asrs.size)
+            rig.voice.setMuted(false)
+            rig.recorder(first)
+        } finally { rig.close() }
+    }
+
+    @Test fun `hangup while muted ignores unmute and resets call state`() = runBlocking<Unit> {
+        val rig = Rig()
+        try {
+            rig.start()
+            val first = rig.recorder()
+            rig.voice.setMuted(true)
+            awaitCondition { first.disposed }
+            rig.voice.stop()
+            rig.voice.setMuted(false)
+            delay(30)
+            assertEquals(VoiceSessionState(), rig.voice.state.value)
+            assertEquals(1, rig.asrs.size)
+        } finally { rig.close() }
+    }
+
+    @Test fun `call creates id and clears it once immediately on hangup`() = runBlocking<Unit> {
+        val rig = Rig()
+        val changes = mutableListOf<String?>()
+        try {
+            rig.voice.start(
+                createAsr = { FakeAsr().also { rig.asrs.add(it) } },
+                speak = null,
+                stopSpeaking = {},
+                forCall = true,
+                onCallStateChanged = { changes.add(it) },
+            )
+            val callId = rig.voice.activeCallId
+            assertFalse(callId.isNullOrBlank())
+            assertEquals(listOf(callId), changes)
+            val recorder = rig.recorder()
+            rig.voice.stop()
+            assertNull(rig.voice.activeCallId)
+            assertEquals(listOf(callId, null), changes)
+            awaitCondition { recorder.disposed }
+            rig.voice.stop()
+            assertEquals(listOf(callId, null), changes)
+        } finally { rig.close() }
+    }
+
+    @Test fun `call error and cancelled scope clear active call`() = runBlocking<Unit> {
+        for (failure in listOf("asr", "scope")) {
+            val rig = Rig()
+            val changes = mutableListOf<String?>()
+            try {
+                rig.voice.start(
+                    createAsr = { FakeAsr().also { rig.asrs.add(it) } },
+                    speak = null,
+                    stopSpeaking = {},
+                    forCall = true,
+                    onCallStateChanged = { changes.add(it) },
+                )
+                val recorder = rig.recorder()
+                if (failure == "asr") recorder.state.value = recorder.state.value.copy(errorMessage = "offline")
+                else rig.scope.cancel()
+                awaitCondition { rig.voice.activeCallId == null && recorder.disposed }
+                assertEquals(2, changes.size)
+                assertNull(changes.last())
+            } finally { rig.close() }
+        }
+    }
+
+    @Test fun `ordinary voice mode does not publish call state`() = runBlocking<Unit> {
+        val rig = Rig()
+        val changes = mutableListOf<String?>()
+        try {
+            rig.voice.start(
+                createAsr = { FakeAsr().also { rig.asrs.add(it) } },
+                speak = null,
+                stopSpeaking = {},
+                onCallStateChanged = { changes.add(it) },
+            )
+            rig.recorder()
+            assertNull(rig.voice.activeCallId)
+            rig.voice.stop()
+            assertTrue(changes.isEmpty())
+        } finally { rig.close() }
+    }
+
     companion object {
         private suspend fun awaitCondition(predicate: () -> Boolean) {
             withTimeout(3000) { while (!predicate()) delay(1) }

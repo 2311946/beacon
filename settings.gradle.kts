@@ -9,8 +9,8 @@ pluginManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
-        mavenCentral()
-        gradlePluginPortal()
+        maven("https://maven.aliyun.com/repository/central")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
         maven("https://repo.itextsupport.com/android")
     }
     resolutionStrategy {
@@ -24,14 +24,15 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven("https://maven.aliyun.com/repository/google")
         google()
-        mavenCentral()
+        maven("https://maven.aliyun.com/repository/central")
         maven("https://jitpack.io")
         mavenLocal()
     }
 }
 
-rootProject.name = "rikkahub"
+rootProject.name = "beacon"
 include(":app")
 include(":ai")
 include(":search")

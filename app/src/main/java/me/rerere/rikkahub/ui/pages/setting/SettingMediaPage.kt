@@ -56,6 +56,7 @@ import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.mediagen.model.MediaKind
+import me.rerere.mediagen.provider.capabilities
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -91,7 +92,8 @@ private enum class MediaTab(
     @param:StringRes private val labelRes: Int,
 ) : PagerTab {
     PROVIDERS(HugeIcons.Image02, R.string.setting_media_page_providers),
-    STORAGE(HugeIcons.Database02, R.string.setting_media_page_asset_storage);
+    STORAGE(HugeIcons.Database02, R.string.setting_media_page_asset_storage),
+    CHAT_IMAGE(HugeIcons.Image02, R.string.setting_media_page_chat_image);
 
     override val label: String
         @Composable get() = stringResource(labelRes)
@@ -162,6 +164,10 @@ fun SettingMediaPage(vm: SettingVM = koinViewModel()) {
                     )
 
                     MediaTab.STORAGE -> MediaUploadS3Tab(
+                        settings = settings,
+                        onUpdateSettings = vm::updateSettings,
+                    )
+                    MediaTab.CHAT_IMAGE -> ChatImageGenerationTab(
                         settings = settings,
                         onUpdateSettings = vm::updateSettings,
                     )

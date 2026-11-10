@@ -31,11 +31,14 @@ data class VoiceSessionState(
     val transcript: String = "",
     val error: String? = null,
     val pendingReplies: Int = 0,
+    val isMuted: Boolean = false,
+    val amplitudes: List<Float> = emptyList(),
+    val lastReply: String = "",
 ) {
     val isActive: Boolean get() = phase != VoicePhase.Off && phase != VoicePhase.Error
 }
 
-/** Capture and generation run independently. Only TTS owns an exclusive microphone pause. */
+/** Capture and generation run independently. TTS and mute both close the microphone. */
 class VoiceSessionController(
     private val scope: CoroutineScope,
     private val getString: (Int) -> String,
@@ -44,11 +47,28 @@ class VoiceSessionController(
     private val mutableState = MutableStateFlow(VoiceSessionState())
     val state = mutableState.asStateFlow()
     private var job: Job? = null
+    private var captureJob: Job? = null
+    private var captureVersion = 0L
+    private var controls: Channel<Event>? = null
+    var activeCallId: String? = null
+        private set
+    private var sessionToken: Any? = null
+    private var endCall: (() -> Unit)? = null
+
+    private fun clearCall(token: Any?) {
+        if (token == null || sessionToken !== token) return
+        sessionToken = null
+        activeCallId = null
+        val callback = endCall
+        endCall = null
+        callback?.invoke()
+    }
 
     private sealed interface Event {
-        data class Utterance(val text: String) : Event
+        data class Utterance(val text: String, val captureId: Long) : Event
         data class Reply(val text: String?) : Event
-        data class Failed(val error: Exception) : Event
+        data class Failed(val error: Exception, val captureId: Long? = null) : Event
+        data object MuteChanged : Event
     }
 
     fun start(
@@ -56,8 +76,15 @@ class VoiceSessionController(
         speak: (suspend (String) -> Unit)?,
         stopSpeaking: () -> Unit,
         listenWhileReplying: Boolean = true,
+        forCall: Boolean = false,
+        onCallStateChanged: (String?) -> Unit = {},
     ) {
         if (job?.isCompleted == false) return
+        val token = Any()
+        sessionToken = token
+        activeCallId = if (forCall) kotlin.uuid.Uuid.random().toString() else null
+        endCall = if (forCall) ({ onCallStateChanged(null) }) else null
+        if (forCall) onCallStateChanged(activeCallId)
         mutableState.value = VoiceSessionState(VoicePhase.Connecting)
         job = scope.launch {
             try {
@@ -69,6 +96,7 @@ class VoiceSessionController(
                 mutableState.update {
                     it.copy(
                         phase = VoicePhase.Error,
+                        amplitudes = emptyList(),
                         error = when (e) {
                             is TimeoutCancellationException -> "Speech recognition timed out. Restart voice mode."
                             is MessageQueuePausedException -> getString(R.string.chat_page_voice_queue_paused)
@@ -77,9 +105,29 @@ class VoiceSessionController(
                     )
                 }
             } finally {
+                clearCall(token)
                 stopSpeaking()
             }
+        }.also { sessionJob ->
+            // scope 已取消时协程可能尚未执行 try/finally，仍须解除通话状态。
+            sessionJob.invokeOnCompletion { clearCall(token) }
         }
+    }
+
+    /** Discards the unfinished utterance, but never cancels messages accepted by the chat queue. */
+    fun setMuted(muted: Boolean) {
+        if (!state.value.isActive || state.value.isMuted == muted) return
+        captureVersion++
+        captureJob?.cancel()
+        mutableState.update {
+            it.copy(
+                isMuted = muted,
+                amplitudes = emptyList(),
+                transcript = if (muted) "" else it.transcript,
+                phase = if (it.phase == VoicePhase.Speaking) it.phase else VoicePhase.Waiting,
+            )
+        }
+        controls?.trySend(Event.MuteChanged)
     }
 
     private suspend fun runSession(
@@ -88,6 +136,7 @@ class VoiceSessionController(
         listenWhileReplying: Boolean,
     ) = coroutineScope {
         val events = Channel<Event>(Channel.UNLIMITED)
+        controls = events
         val submitted = Channel<Deferred<String?>>(Channel.UNLIMITED)
         val replies = ArrayDeque<String>()
         var asr: ASRController? = null
@@ -105,57 +154,84 @@ class VoiceSessionController(
 
         try {
             while (isActive) {
+                if (state.value.isMuted) {
+                    capture?.cancelAndJoin()
+                    capture = null
+                    captureJob = null
+                    asr = null
+                }
                 // Finish any sentence already in progress before giving TTS the microphone pause.
                 if (speak != null && replies.isNotEmpty() && asr?.state?.value?.voiceTurn?.itemId == null) {
                     capture?.cancelAndJoin()
                     capture = null
+                    captureJob = null
                     asr = null
-                    mutableState.update { it.copy(phase = VoicePhase.Speaking) }
-                    speak(replies.removeFirst())
+                    val reply = replies.removeFirst()
+                    mutableState.update {
+                        it.copy(phase = VoicePhase.Speaking, lastReply = reply, amplitudes = emptyList())
+                    }
+                    speak(reply)
                     delay(300) // Let the loudspeaker's tail decay before opening the microphone.
                     continue
                 }
-                // Turn-based mode keeps the microphone closed until every reply has arrived and been spoken.
-                if (capture == null && !listenWhileReplying && state.value.pendingReplies > 0) {
-                    mutableState.update { it.copy(phase = VoicePhase.Waiting) }
+                // Turn-based calls wait for the reply and complete playback before reopening capture.
+                if (capture == null && (state.value.isMuted || (!listenWhileReplying && state.value.pendingReplies > 0))) {
+                    mutableState.update { it.copy(phase = VoicePhase.Waiting, amplitudes = emptyList()) }
                 } else if (capture == null) {
-                    mutableState.update { it.copy(phase = VoicePhase.Connecting, transcript = "") }
+                    mutableState.update { it.copy(phase = VoicePhase.Connecting, transcript = "", amplitudes = emptyList()) }
                     val recorder = createAsr()
+                    val captureId = ++captureVersion
                     asr = recorder
                     capture = launch(start = CoroutineStart.UNDISPATCHED) {
                         try {
-                            events.send(Event.Utterance(listen(recorder)))
+                            events.send(Event.Utterance(listen(recorder), captureId))
                         } catch (e: Exception) {
                             if (e is CancellationException && !isActive) throw e
-                            events.send(Event.Failed(e))
+                            events.send(Event.Failed(e, captureId))
                         }
                     }
+                    captureJob = capture
                 }
                 when (val event = events.receive()) {
                     is Event.Utterance -> {
+                        if (event.captureId != captureVersion || state.value.isMuted) continue
                         capture?.join()
                         capture = null
+                        captureJob = null
                         asr = null
                         if (event.text.isNotBlank()) {
                             val reply = enqueueMessage(event.text)
                             mutableState.update {
-                                it.copy(transcript = event.text, pendingReplies =
-                                    it.pendingReplies + 1)
+                                it.copy(transcript = event.text, amplitudes = emptyList(), pendingReplies = it.pendingReplies + 1)
                             }
                             submitted.send(reply)
                         }
                     }
                     is Event.Reply -> {
-                        mutableState.update { it.copy(pendingReplies = (it.pendingReplies - 1).coerceAtLeast(0)) }
+                        mutableState.update {
+                            it.copy(
+                                pendingReplies = (it.pendingReplies - 1).coerceAtLeast(0),
+                                lastReply = event.text?.takeIf(String::isNotBlank) ?: it.lastReply,
+                            )
+                        }
                         event.text?.takeIf { speak != null && it.isNotBlank() }?.let { replies.addLast(it) }
                     }
-                    is Event.Failed -> throw event.error
+                    is Event.Failed -> if (event.captureId == null || event.captureId == captureVersion) throw event.error
+                    Event.MuteChanged -> {
+                        capture?.cancelAndJoin()
+                        capture = null
+                        captureJob = null
+                        asr = null
+                    }
                 }
             }
         } finally {
-            capture?.cancel()
+            controls = null
+            captureJob = null
+            capture?.cancelAndJoin()
             // Submitted messages belong to the chat queue; leaving voice mode only detaches observers.
             submitted.close()
+            events.close()
         }
     }
 
@@ -167,27 +243,24 @@ class VoiceSessionController(
                     check(it.errorMessage == null) { it.errorMessage.orEmpty() }
                     it.status != ASRStatus.Connecting
                 }.also {
-                    check(
-                        it.status == ASRStatus.Listening || it.voiceTurn.isComplete
-                    ) { "Unable to start speech recognition" }
+                    check(it.status == ASRStatus.Listening || it.voiceTurn.isComplete) { "Unable to start speech recognition" }
                 }
             }
             val ended = withTimeout(120_000) {
                 asr.state.onEach {
                     check(it.errorMessage == null) { it.errorMessage.orEmpty() }
-                    check(
-                        it.status == ASRStatus.Listening || it.voiceTurn.isComplete
-                    ) { "Speech recognition disconnected" }
+                    check(it.status == ASRStatus.Listening || it.voiceTurn.isComplete) { "Speech recognition disconnected" }
                     mutableState.update { current ->
-                        current.copy(
+                        if (current.isMuted) current else current.copy(
                             phase = VoicePhase.Listening,
-                            transcript = it.transcript
+                            transcript = it.transcript,
+                            amplitudes = it.amplitudes,
                         )
                     }
                 }.first { it.voiceTurn.speechEnded }
             }
             asr.pauseCapture()
-            mutableState.update { it.copy(phase = VoicePhase.Transcribing, transcript = ended.transcript) }
+            mutableState.update { it.copy(phase = VoicePhase.Transcribing, transcript = ended.transcript, amplitudes = emptyList()) }
             return withTimeout(15_000) {
                 asr.state.first {
                     check(it.errorMessage == null) { it.errorMessage.orEmpty() }
@@ -203,6 +276,9 @@ class VoiceSessionController(
     }
 
     fun stop() {
+        clearCall(sessionToken)
+        captureVersion++
+        captureJob?.cancel()
         job?.cancel()
         mutableState.value = VoiceSessionState()
     }

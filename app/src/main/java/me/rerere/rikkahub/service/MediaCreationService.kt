@@ -74,6 +74,8 @@ data class MediaCreationSubmission(
     val prompt: String,
     val params: MediaCreationParams,
     val assets: List<MediaCreationAsset>,
+    // 聊天先落库此 ID，再启动提交，进程中断后仍能关联已创建的记录。
+    val recordId: Uuid = Uuid.random(),
 )
 
 /**
@@ -100,7 +102,8 @@ class MediaCreationService(
     suspend fun submit(submission: MediaCreationSubmission): MediaCreationRecord = inAppScope {
         val capabilities = submission.provider.capabilities(submission.model.kind)
             ?: error(context.getString(R.string.media_creation_error_kind_unsupported, submission.provider.name))
-        val recordId = Uuid.random()
+        val recordId = submission.recordId
+        check(repository.getRecord(recordId) == null) { "媒体生成记录已存在" }
         val assets = submission.assets.supportedBy(capabilities)
         val record = MediaCreationRecord(
             id = recordId,

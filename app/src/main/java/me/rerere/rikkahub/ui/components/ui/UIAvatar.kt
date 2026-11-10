@@ -98,7 +98,8 @@ fun UIAvatar(
     loading: Boolean = false,
     shape: Shape = rememberAvatarShape(loading),
     onUpdate: ((Avatar) -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    imageMaxSize: Int = 4096,
 ) {
     val filesManager: FilesManager = koinInject()
     var showPickOption by remember { mutableStateOf(false) }
@@ -118,6 +119,7 @@ fun UIAvatar(
             saveAvatarImage(croppedUri)
         },
         aspectRatio = 1f,
+        maxResultSize = imageMaxSize,
     )
 
     val imagePickerLauncher = rememberLauncherForActivityResult(

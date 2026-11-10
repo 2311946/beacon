@@ -14,6 +14,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -164,20 +165,15 @@ class ClaudePromptCacheRequestTest {
         assertEquals("1h", toolCacheControl["ttl"]!!.jsonPrimitive.content)
 
         val messagesJson = request["messages"]!!.jsonArray
-        val firstUserMessage = messagesJson.first { msg ->
-            msg.jsonObject["role"]?.jsonPrimitive?.content == "user"
-        }.jsonObject
-        val messageCacheControl = firstUserMessage["content"]!!
-            .jsonArray
-            .last()
-            .jsonObject["cache_control"]!!
-            .jsonObject
-        assertEquals("ephemeral", messageCacheControl["type"]!!.jsonPrimitive.content)
-        assertEquals("1h", messageCacheControl["ttl"]!!.jsonPrimitive.content)
+        messagesJson.forEach { msg ->
+            msg.jsonObject["content"]?.jsonArray?.forEach { block ->
+                assertNull(block.jsonObject["cache_control"])
+            }
+        }
     }
 
     @Test
-    fun `promptCaching=true should add cache_control to second-to-last real user message`() {
+    fun `promptCaching=true keeps moving markers out of historical messages`() {
         val providerSetting = ProviderSetting.Claude(promptCaching = true)
         val messages = listOf(
             UIMessage.system("system prompt"),
@@ -194,37 +190,46 @@ class ClaudePromptCacheRequestTest {
 
         val request = buildRequest(providerSetting, messages, params)
         val msgs = request["messages"]!!.jsonArray
-
-        // Find all real user messages (not tool_result)
-        val userMsgIndices = msgs.mapIndexedNotNull { index, msg ->
-            val obj = msg.jsonObject
-            if (obj["role"]?.jsonPrimitive?.content == "user") {
-                val content = obj["content"]?.jsonArray
-                val isToolResult = content?.any {
-                    it.jsonObject["type"]?.jsonPrimitive?.content == "tool_result"
-                } == true
-                if (!isToolResult) index else null
-            } else null
+        assertEquals(5, msgs.size)
+        msgs.forEach { msg ->
+            msg.jsonObject["content"]?.jsonArray?.forEach { block ->
+                assertNull(block.jsonObject["cache_control"])
+            }
         }
+        assertNotNull(request["cache_control"])
+        assertNotNull(request["system"]!!.jsonArray.last().jsonObject["cache_control"])
+    }
 
-        // Should have 3 real user messages
-        assertEquals(3, userMsgIndices.size)
+    @Test
+    fun `appending a new turn preserves serialized historical message prefix`() {
+        val providerSetting = ProviderSetting.Claude(promptCaching = true)
+        val params = TextGenerationParams(
+            model = Model(modelId = "claude-test", abilities = emptyList()),
+            tools = emptyList()
+        )
+        val history = listOf(
+            UIMessage.system("stable system"),
+            UIMessage.user("first question"),
+            UIMessage.assistant("first answer")
+        )
 
-        // Second-to-last (index 1 in userMsgIndices) should have cache_control
-        val targetMsg = msgs[userMsgIndices[1]].jsonObject
-        val content = targetMsg["content"]!!.jsonArray
-        val cacheControl = content.last().jsonObject["cache_control"]!!.jsonObject
-        assertEquals("ephemeral", cacheControl["type"]!!.jsonPrimitive.content)
+        val previous = buildRequest(providerSetting, history, params)["messages"]!!.jsonArray
+        val appended = buildRequest(
+            providerSetting,
+            history + UIMessage.user("next question"),
+            params
+        )["messages"]!!.jsonArray
 
-        // Last user message should NOT have cache_control
-        val lastMsg = msgs[userMsgIndices[2]].jsonObject
-        val lastContent = lastMsg["content"]!!.jsonArray
-        assertNull(lastContent.last().jsonObject["cache_control"])
-
-        // First user message should NOT have cache_control
-        val firstMsg = msgs[userMsgIndices[0]].jsonObject
-        val firstContent = firstMsg["content"]!!.jsonArray
-        assertNull(firstContent.last().jsonObject["cache_control"])
+        assertEquals(previous.size, appended.take(previous.size).size)
+        previous.indices.forEach { index ->
+            assertEquals(previous[index], appended[index])
+            assertArrayEquals(
+                previous[index].toString().toByteArray(Charsets.UTF_8),
+                appended[index].toString().toByteArray(Charsets.UTF_8)
+            )
+        }
+        assertNotNull(buildRequest(providerSetting, history, params)["cache_control"])
+        assertNotNull(buildRequest(providerSetting, history, params)["system"]!!.jsonArray.last().jsonObject["cache_control"])
     }
 
     @Test

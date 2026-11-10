@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import me.rerere.ai.core.TokenUsage
+import me.rerere.rikkahub.data.db.dao.AutonomousActivityDAO
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.FolderDAO
@@ -18,6 +19,7 @@ import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.TranslationHistoryDAO
 import me.rerere.rikkahub.data.db.dao.UsageRecordDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
+import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.data.db.entity.FolderEntity
@@ -54,8 +56,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         MediaCreationRecordEntity::class,
         TranslationHistoryEntity::class,
         UsageRecordEntity::class,
+        AutonomousActivityEntity::class,
     ],
-    version = 32,
+    version = 33,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -108,6 +111,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun translationHistoryDao(): TranslationHistoryDAO
 
     abstract fun usageRecordDao(): UsageRecordDAO
+
+    abstract fun autonomousActivityDao(): AutonomousActivityDAO
 }
 
 object TokenUsageConverter {

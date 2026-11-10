@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.pages.chat
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -43,6 +47,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,10 +64,12 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Clock01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
@@ -72,6 +80,7 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.UsageBudgetBanner
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
@@ -89,6 +98,32 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+
+internal val VoiceCallPhoneIcon = ImageVector.Builder(
+    name = "VoiceCallPhone", defaultWidth = 24.dp, defaultHeight = 24.dp,
+    viewportWidth = 24f, viewportHeight = 24f,
+).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(6.62f, 10.79f)
+        curveTo(8.06f, 13.62f, 10.38f, 15.94f, 13.21f, 17.38f)
+        lineTo(15.41f, 15.18f)
+        curveTo(15.68f, 14.91f, 16.08f, 14.82f, 16.43f, 14.94f)
+        curveTo(17.55f, 15.31f, 18.76f, 15.51f, 20f, 15.51f)
+        curveTo(20.55f, 15.51f, 21f, 15.96f, 21f, 16.51f)
+        lineTo(21f, 20f)
+        curveTo(21f, 20.55f, 20.55f, 21f, 20f, 21f)
+        curveTo(10.61f, 21f, 3f, 13.39f, 3f, 4f)
+        curveTo(3f, 3.45f, 3.45f, 3f, 4f, 3f)
+        lineTo(7.5f, 3f)
+        curveTo(8.05f, 3f, 8.5f, 3.45f, 8.5f, 4f)
+        curveTo(8.5f, 5.25f, 8.7f, 6.45f, 9.07f, 7.57f)
+        curveTo(9.18f, 7.92f, 9.1f, 8.31f, 8.82f, 8.59f)
+        close()
+    }
+}.build()
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
@@ -148,6 +183,64 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     }
 
     val startVoiceMode = rememberVoiceModeStarter(vm, setting)
+    val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+    var showCall by rememberSaveable(id) { mutableStateOf(false) }
+    var showCallPrompt by remember { mutableStateOf(false) }
+    var showCallSettings by remember { mutableStateOf(false) }
+    var callBaseline by remember(id) { mutableStateOf(emptySet<Uuid>()) }
+    val startVoiceCall = rememberVoiceModeStarter(vm, setting, forCall = true) {
+        callBaseline = conversation.currentMessages.map { it.id }.toSet()
+        showCallPrompt = false
+        showCall = true
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+    }
+    LaunchedEffect(showCall, voiceState.phase) {
+        if (showCall && voiceState.phase == VoicePhase.Off) showCall = false
+    }
+    if (showCallPrompt) {
+        AlertDialog(
+            onDismissRequest = { showCallPrompt = false },
+            title = { Text("语音通话") },
+            text = {
+                Column {
+                    Text("自动检测说话；AI 播放完毕后继续聆听。通话文字保存在当前聊天中，退到后台会结束通话。")
+                    TextButton(onClick = {
+                        showCallPrompt = false
+                        showCallSettings = true
+                    }) { Text("通话设置与音色") }
+                }
+            },
+            confirmButton = { TextButton(onClick = startVoiceCall) { Text("开始通话") } },
+            dismissButton = { TextButton(onClick = { showCallPrompt = false }) { Text("取消") } },
+        )
+    }
+    if (showCall) {
+        val callMessages = conversation.currentMessages.filterNot { it.id in callBaseline }
+        val lastUserIndex = callMessages.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
+        val aiSubtitle = callMessages.drop(lastUserIndex + 1)
+            .filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+            .flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
+            .joinToString("\n") { it.text }
+        VoiceCallDialog(
+            assistant = assistant,
+            state = voiceState,
+            aiSubtitle = aiSubtitle,
+            onDismiss = {
+                vm.voiceSession.stop()
+                showCall = false
+            },
+            onToggleMute = { vm.voiceSession.setMuted(!voiceState.isMuted) },
+            onOpenSettings = {
+                vm.voiceSession.stop()
+                showCall = false
+                showCallSettings = true
+            },
+        )
+    }
+    if (showCallSettings) {
+        VoiceCallSettingsDialog(settings = setting, onDismiss = { showCallSettings = false })
+    }
 
     val inputState = vm.inputState
 
@@ -202,12 +295,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting
+                        settings = setting,
+                        isVisible = isBigScreen || drawerState.isOpen,
                     )
                 }
             ) {
                 ChatPageContent(
                     onStartVoiceMode = startVoiceMode,
+                    onStartVoiceCall = { showCallPrompt = true },
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
@@ -235,12 +330,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting
+                        settings = setting,
+                        isVisible = isBigScreen || drawerState.isOpen,
                     )
                 }
             ) {
                 ChatPageContent(
                     onStartVoiceMode = startVoiceMode,
+                    onStartVoiceCall = { showCallPrompt = true },
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
@@ -268,6 +365,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
 @Composable
 private fun ChatPageContent(
     onStartVoiceMode: () -> Unit,
+    onStartVoiceCall: () -> Unit,
     inputState: ChatInputState,
     loadingJob: Job?,
     processingStatus: String? = null,
@@ -320,7 +418,9 @@ private fun ChatPageContent(
         AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
         Scaffold(
             topBar = {
-                TopBar(
+                Column {
+                    TopBar(
+                    onStartVoiceCall = onStartVoiceCall,
                     settings = setting,
                     assistant = assistant,
                     chatModel = currentChatModel,
@@ -334,10 +434,15 @@ private fun ChatPageContent(
                     onClickMenu = {
                         previewMode = !previewMode
                     },
+                    onOpenActivityLog = {
+                        navController.navigate(Screen.AutonomousActivity(assistant.id.toString()))
+                    },
                     onUpdateTitle = {
                         vm.updateTitle(it)
                     }
-                )
+                    )
+                    UsageBudgetBanner()
+                }
             },
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
@@ -394,6 +499,14 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
+                    onSendSticker = { url ->
+                        if (currentChatModel == null) {
+                            toaster.show("请先选择模型", type = ToastType.Error)
+                        } else {
+                            vm.handleMessageSend(listOf(UIMessagePart.Image(url = url)))
+                        }
+                    },
+                    onManageStickers = { navController.navigate(Screen.SettingStickers) },
                     onUpdateChatModel = vm::setChatModel,
                     onUpdateAssistant = vm::updateAssistant,
                     onMoreClick = {
@@ -418,6 +531,7 @@ private fun ChatPageContent(
                 onRegenerate = {
                     vm.regenerateAtMessage(it)
                 },
+                onGenerateImage = vm::generateImageFromMessage,
                 onEdit = {
                     inputState.editingMessage = it.id
                     inputState.setContents(it.parts)
@@ -479,6 +593,7 @@ private fun ChatPageContent(
                 vm = vm,
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
+                onUpdateShowAssistantStatus = vm::setShowAssistantStatus,
                 onDismiss = { showFilesSheet = false },
             )
         }
@@ -495,6 +610,7 @@ private fun ChatFilesPickerSheet(
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
     onStartVoiceMode: () -> Unit,
+    onUpdateShowAssistantStatus: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
@@ -524,6 +640,7 @@ private fun ChatFilesPickerSheet(
             onCompressContext = vm::handleCompressContext,
             onUpdateAssistant = vm::updateAssistant,
             onUpdateWorkspaceCwd = vm::updateWorkspaceCwd,
+            onUpdateShowAssistantStatus = onUpdateShowAssistantStatus,
             onUpdateSearchMode = { mode ->
                 vm.updateSearch(
                     enableWebSearch = mode == SearchMode.LOCAL,
@@ -559,6 +676,7 @@ private fun ChatFilesPickerSheet(
 
 @Composable
 private fun TopBar(
+    onStartVoiceCall: () -> Unit,
     settings: Settings,
     assistant: Assistant,
     chatModel: Model?,
@@ -568,6 +686,7 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
+    onOpenActivityLog: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -575,6 +694,7 @@ private fun TopBar(
     val titleState = useEditState<String> {
         onUpdateTitle(it)
     }
+    var showTitleMenu by remember(assistant.id, conversation.id) { mutableStateOf(false) }
 
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -591,17 +711,25 @@ private fun TopBar(
         },
         title = {
             val editTitleWarning = stringResource(R.string.chat_page_edit_title_warning)
-            Surface(
-                onClick = {
-                    if (conversation.messageNodes.isNotEmpty()) {
-                        titleState.open(conversation.title)
-                    } else {
-                        toaster.show(editTitleWarning, type = ToastType.Warning)
-                    }
-                },
-                color = Color.Transparent,
-            ) {
-                Column {
+            Box {
+                Column(
+                    modifier = Modifier
+                        .combinedClickable(
+                            onClickLabel = "编辑标题",
+                            onClick = {
+                                if (conversation.messageNodes.isNotEmpty()) {
+                                    titleState.open(conversation.title)
+                                } else {
+                                    toaster.show(editTitleWarning, type = ToastType.Warning)
+                                }
+                            },
+                            onLongClickLabel = "打开活动记录菜单",
+                            onLongClick = { showTitleMenu = true },
+                        )
+                        .semantics {
+                            contentDescription = "聊天标题，点击编辑，长按查看活动记录"
+                        },
+                ) {
                     val provider = chatModel?.findProvider(providers = settings.providers, checkOverwrite = false)
                     Text(
                         text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
@@ -620,10 +748,43 @@ private fun TopBar(
                             )
                         )
                     }
+                    if (conversation.showAssistantStatus) {
+                        settings.assistantStatuses[assistant.id.toString()]?.displayText
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { status ->
+                                Text(
+                                    text = status,
+                                    overflow = TextOverflow.Ellipsis,
+                                    maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                    }
+                }
+                DropdownMenu(
+                    expanded = showTitleMenu,
+                    onDismissRequest = { showTitleMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("活动记录") },
+                        onClick = {
+                            showTitleMenu = false
+                            onOpenActivityLog()
+                        },
+                    )
                 }
             }
         },
         actions = {
+            IconButton(onClick = onStartVoiceCall) {
+                Icon(VoiceCallPhoneIcon, contentDescription = "语音通话")
+            }
+            IconButton(
+                onClick = onOpenActivityLog,
+            ) {
+                Icon(HugeIcons.Clock01, contentDescription = "活动记录")
+            }
             IconButton(
                 onClick = {
                     onClickMenu()

@@ -130,6 +130,7 @@ fun ChatList(
     onDismissError: (Uuid) -> Unit = {},
     onClearAllErrors: () -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
+    onGenerateImage: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onForkMessage: (UIMessage) -> Unit = {},
     onDelete: (UIMessage) -> Unit = {},
@@ -172,6 +173,7 @@ fun ChatList(
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
                 onRegenerate = onRegenerate,
+                onGenerateImage = onGenerateImage,
                 onEdit = onEdit,
                 onForkMessage = onForkMessage,
                 onDelete = onDelete,
@@ -221,6 +223,7 @@ private fun ChatListNormal(
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
     onRegenerate: (UIMessage) -> Unit,
+    onGenerateImage: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
     onDelete: (UIMessage) -> Unit,
@@ -366,6 +369,7 @@ private fun ChatListNormal(
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)
                             },
+                            onGenerateImage = onGenerateImage,
                             onEdit = {
                                 onEdit(node.currentMessage)
                             },

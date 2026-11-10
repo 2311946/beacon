@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -142,12 +149,19 @@ fun ChatInput(
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
+    onSendSticker: ((String) -> Unit)? = null,
+    onManageStickers: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    var showStickers by remember(state) { mutableStateOf(false) }
+    BackHandler(enabled = showStickers) { showStickers = false }
+    LaunchedEffect(voiceState.isActive) {
+        if (voiceState.isActive) showStickers = false
+    }
 
     val themeShape = MaterialTheme.shapes.largeIncreased
     val containerShape = RoundedCornerShape(
@@ -272,6 +286,7 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        onInputFocused = { showStickers = false },
                     )
 
                     Row(
@@ -307,8 +322,23 @@ fun ChatInput(
 
                         }
 
+                        if (onSendSticker != null && !voiceState.isActive) {
+                            ActionIconButton(onClick = {
+                                if (!showStickers) {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                }
+                                showStickers = !showStickers
+                            }) {
+                                StickerSmileIcon(selected = showStickers)
+                            }
+                        }
+
                         ActionIconButton(
-                            onClick = onMoreClick
+                            onClick = {
+                                showStickers = false
+                                onMoreClick()
+                            }
                         ) {
                             Icon(
                                 imageVector = HugeIcons.Add01,
@@ -360,7 +390,20 @@ fun ChatInput(
                     }
                 }
             }
-
+            if (showStickers && onSendSticker != null) {
+                Surface(
+                    shape = containerShape,
+                    color = containerColor,
+                ) {
+                    ChatStickerPanel(
+                        onSendSticker = state::insertSticker,
+                        onManage = {
+                            showStickers = false
+                            onManageStickers()
+                        },
+                    )
+                }
+            }
         }
     }
 
@@ -368,6 +411,28 @@ fun ChatInput(
         state = modelListState,
         onSelect = onUpdateChatModel,
     )
+}
+
+// 自绘线框笑脸，避免依赖图标库未提供的符号或系统彩色表情字体。
+@Composable
+private fun StickerSmileIcon(selected: Boolean) {
+    val color = if (selected) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurface
+    Canvas(Modifier.size(22.dp).semantics { contentDescription = "表情包" }) {
+        val unit = size.minDimension / 24f
+        drawCircle(color, radius = 9f * unit, style = Stroke(1.7f * unit))
+        drawCircle(color, radius = unit, center = Offset(8.5f * unit, 9f * unit))
+        drawCircle(color, radius = unit, center = Offset(15.5f * unit, 9f * unit))
+        drawArc(
+            color = color,
+            startAngle = 0f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(7f * unit, 10f * unit),
+            size = Size(10f * unit, 7f * unit),
+            style = Stroke(1.7f * unit),
+        )
+    }
 }
 
 @Composable
@@ -442,6 +507,7 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    onInputFocused: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -579,6 +645,7 @@ private fun TextInputRow(
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
                     isFocused = it.isFocused
+                    if (it.isFocused) onInputFocused()
                 },
             shape = MaterialTheme.shapes.largeIncreased,
             placeholder = {

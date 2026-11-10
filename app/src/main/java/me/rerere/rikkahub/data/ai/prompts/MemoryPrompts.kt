@@ -169,7 +169,7 @@ internal fun buildMemoryPrompt(files: List<MemoryFile>): String = buildString {
     appendLine("<memory_system>")
     appendLine(MEMORY_SYSTEM_INTRO)
     appendLine()
-    appendMemoryState(files)
+    appendMemoryState(files, includeUpdated = false)
     appendLine()
     appendLine(MEMORY_SYSTEM_RULES)
     appendLine("</memory_system>")
@@ -210,7 +210,7 @@ internal fun buildMemoryConsolidationInput(
     }
 }.trimEnd()
 
-private fun StringBuilder.appendMemoryState(files: List<MemoryFile>) {
+private fun StringBuilder.appendMemoryState(files: List<MemoryFile>, includeUpdated: Boolean = true) {
     appendPinnedFile("profile", files.find { it.path == MemoryFile.PROFILE_PATH })
     appendLine()
     appendPinnedFile("preferences", files.find { it.path == MemoryFile.PREFERENCES_PATH })
@@ -220,7 +220,7 @@ private fun StringBuilder.appendMemoryState(files: List<MemoryFile>) {
     if (listed.isEmpty()) {
         appendLine("(no files yet)")
     } else {
-        listed.forEach { appendLine(it.toListingLine()) }
+        listed.sortedBy { it.path }.forEach { appendLine(it.toListingLine(includeUpdated)) }
     }
     appendLine("</memory_listing>")
 }
@@ -231,7 +231,7 @@ private fun StringBuilder.appendPinnedFile(tag: String, file: MemoryFile?) {
     appendLine("</$tag>")
 }
 
-private fun MemoryFile.toListingLine(): String = buildString {
+private fun MemoryFile.toListingLine(includeUpdated: Boolean = true): String = buildString {
     append(path)
     append(" | ")
     append(description.ifEmpty { "(no description)" })
@@ -239,6 +239,8 @@ private fun MemoryFile.toListingLine(): String = buildString {
         append(" | aliases: ")
         append(aliases.joinToString(", "))
     }
-    append(" | updated: ")
-    append(Instant.ofEpochMilli(updatedAt).atZone(ZoneId.systemDefault()).toLocalDate())
+    if (includeUpdated) {
+        append(" | updated: ")
+        append(Instant.ofEpochMilli(updatedAt).atZone(ZoneId.systemDefault()).toLocalDate())
+    }
 }

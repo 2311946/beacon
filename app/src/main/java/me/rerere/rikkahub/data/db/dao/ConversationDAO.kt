@@ -18,19 +18,19 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAllPaging(): PagingSource<Int, ConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND (config IS NULL OR config NOT LIKE '%\"isGroupChat\":true%') ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistant(assistantId: String): Flow<List<ConversationEntity>>
 
     @Query("SELECT title FROM conversationentity WHERE assistant_id = :assistantId")
     suspend fun getTitlesOfAssistant(assistantId: String): List<String>
 
     @Query(
-        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC"
+        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND (config IS NULL OR config NOT LIKE '%\"isGroupChat\":true%') ORDER BY is_pinned DESC, update_at DESC"
     )
     fun getConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
 
     @Query(
-        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC"
+        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' AND (config IS NULL OR config NOT LIKE '%\"isGroupChat\":true%') ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC"
     )
     fun getUnfiledConversationsOfAssistantPaging(
         assistantId: String,
@@ -38,7 +38,7 @@ interface ConversationDAO {
     ): PagingSource<Int, LightConversationEntity>
 
     @Query(
-        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC"
+        "SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId AND (config IS NULL OR config NOT LIKE '%\"isGroupChat\":true%') ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC"
     )
     fun getConversationsOfFolderPaging(
         folderId: String,
@@ -49,6 +49,17 @@ interface ConversationDAO {
         "SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit"
     )
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
+
+    @Query(
+        "SELECT id FROM conversationentity WHERE assistant_id = :assistantId " +
+            "AND (config IS NULL OR config NOT LIKE '%\"isGroupChat\":true%') " +
+            "ORDER BY update_at DESC, id DESC LIMIT :limit OFFSET :offset"
+    )
+    suspend fun getRecentConversationSummariesOfAssistant(
+        assistantId: String,
+        limit: Int,
+        offset: Int,
+    ): List<RecentConversationSummary>
 
     @Query(
         "SELECT * FROM conversationentity WHERE title LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC"
@@ -157,3 +168,5 @@ interface ConversationDAO {
 data class ConversationDayCount(val day: String, val count: Int)
 
 data class AssistantConversationCount(val assistantId: String, val count: Int)
+
+data class RecentConversationSummary(val id: String)

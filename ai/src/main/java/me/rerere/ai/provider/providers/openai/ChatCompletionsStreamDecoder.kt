@@ -172,6 +172,7 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
     private fun parseUsage(usage: JsonObject?): TokenUsage? {
         if (usage == null) return null
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(usage),
             promptTokens = usage["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = usage["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = usage["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

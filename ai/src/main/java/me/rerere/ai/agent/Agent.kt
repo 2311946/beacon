@@ -23,6 +23,8 @@ data class AgentRequest(
     /** 最多请求模型的次数 */
     val maxSteps: Int = 256,
     val retry: RetryPolicy = RetryPolicy.NONE,
+    /** false 时保留末条助手消息为只读历史，并为本轮创建新的消息 ID。 */
+    val continueLastAssistantMessage: Boolean = true,
 )
 
 /** 调用方在循环各个节点上的介入点 */

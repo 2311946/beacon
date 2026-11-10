@@ -158,6 +158,7 @@ internal class GoogleStreamDecoder(
         val candidateTokens = usage["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         val totalTokens = usage["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(usage),
             promptTokens = promptTokens,
             completionTokens = candidateTokens + thoughtTokens,
             totalTokens = totalTokens,

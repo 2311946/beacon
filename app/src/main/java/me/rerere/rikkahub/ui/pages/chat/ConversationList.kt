@@ -14,6 +14,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +53,8 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
+import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.mirrorForRtl
@@ -77,6 +80,7 @@ sealed class ConversationListItem {
 
 @Composable
 fun ColumnScope.ConversationList(
+    settings: Settings,
     current: Conversation,
     conversations: LazyPagingItems<ConversationListItem>,
     conversationJobs: Collection<Uuid>,
@@ -88,6 +92,7 @@ fun ColumnScope.ConversationList(
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
+    onSetAssistantStatus: (Assistant) -> Unit = {},
     onMoveToFolder: (Conversation) -> Unit = {}
 ) {
     var hasScrolledToCurrent by remember(current.id) { mutableStateOf(false) }
@@ -167,6 +172,8 @@ fun ColumnScope.ConversationList(
                 is ConversationListItem.Item -> {
                     ConversationItem(
                         conversation = item.conversation,
+                        assistant = settings.assistants.firstOrNull { it.id == item.conversation.assistantId },
+                        assistantStatus = settings.assistantStatuses[item.conversation.assistantId.toString()]?.displayText.orEmpty(),
                         selected = item.conversation.id == current.id,
                         loading = item.conversation.id in conversationJobs,
                         onClick = onClick,
@@ -175,6 +182,7 @@ fun ColumnScope.ConversationList(
                         onPin = onPin,
                         onMoveToAssistant = onMoveToAssistant,
                         onMoveToFolder = onMoveToFolder,
+                        onSetAssistantStatus = onSetAssistantStatus,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -238,6 +246,8 @@ private fun PinnedHeader(
 @Composable
 private fun ConversationItem(
     conversation: Conversation,
+    assistant: Assistant?,
+    assistantStatus: String,
     selected: Boolean,
     loading: Boolean,
     modifier: Modifier = Modifier,
@@ -245,6 +255,7 @@ private fun ConversationItem(
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
+    onSetAssistantStatus: (Assistant) -> Unit = {},
     onMoveToFolder: (Conversation) -> Unit = {},
     onClick: (Conversation) -> Unit
 ) {
@@ -279,12 +290,28 @@ private fun ConversationItem(
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (assistant != null && assistantStatus.isNotBlank()) {
+                    Text(
+                        text = assistant.name.ifEmpty { stringResource(R.string.assistant_page_default_assistant) },
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = assistantStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
 
             // 置顶图标
             AnimatedVisibility(conversation.isPinned) {
@@ -310,6 +337,15 @@ private fun ConversationItem(
                 expanded = showDropdownMenu,
                 onDismissRequest = { showDropdownMenu = false },
             ) {
+                if (assistant != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_page_set_assistant_status)) },
+                        onClick = {
+                            showDropdownMenu = false
+                            onSetAssistantStatus(assistant)
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = {
                         Text(

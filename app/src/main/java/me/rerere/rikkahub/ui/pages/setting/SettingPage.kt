@@ -71,6 +71,7 @@ import me.rerere.hugeicons.stroke.Tiktok
 import me.rerere.hugeicons.stroke.WavingHand01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.UsageBudgetStore
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -98,6 +99,18 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
+    val usageBudgetStore: UsageBudgetStore = koinInject()
+    val budgetState by usageBudgetStore.stateFlow.collectAsStateWithLifecycle()
+    var showBudgetDialog by remember { mutableStateOf(false) }
+    val budgetError by usageBudgetStore.error.collectAsStateWithLifecycle()
+
+    if (showBudgetDialog) {
+        UsageBudgetDialog(
+            state = budgetState,
+            store = usageBudgetStore,
+            onDismiss = { showBudgetDialog = false },
+        )
+    }
 
     if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
         AlertDialog(
@@ -210,6 +223,19 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingStickers) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("添加和管理 URL 表情包") },
+                        headlineContent = { Text("表情包") },
+                    )
+                    // TODO(i18n): 文案先写中文
+                    item(
+                        onClick = { navController.navigate(Screen.SettingProactiveMessage) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("定期醒来，自主决定联系你或继续休眠") },
+                        headlineContent = { Text("自主唤醒") },
+                    )
                 }
             }
 
@@ -224,6 +250,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.AiMagic, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_default_model_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_default_model)) },
+                    )
+                    item(
+                        onClick = { showBudgetDialog = true },
+                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = {
+                            Text(budgetError ?: "本月已用 ${"%.2f".format(budgetState.spentYuan)} 元 / ${"%.2f".format(budgetState.budgetYuan)} 元；请配置模型单价")
+                        },
+                        headlineContent = { Text("用量预算") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingProvider) },

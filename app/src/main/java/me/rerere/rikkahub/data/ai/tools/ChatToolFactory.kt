@@ -97,7 +97,8 @@ class ChatToolFactory(
         // 文件放在本机, 只有本地 Rootfs 挂载了 /tool_outputs, 远程工作区同样读不到
         val canReadToolOutputs = workspaceTools.isNotEmpty() &&
             assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }?.capabilities()?.rootfs == true
-        return if (canReadToolOutputs) tools.map(::withOutputTruncation) else tools
+        val ordered = tools.sortedBy { it.name }
+        return if (canReadToolOutputs) ordered.map(::withOutputTruncation) else ordered
     }
 
     private fun withOutputTruncation(tool: Tool): Tool {
@@ -126,7 +127,10 @@ class ChatToolFactory(
                     appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
                     appendLine()
                     append(fullText.take(TOOL_OUTPUT_PREVIEW_CHARS))
-                }
+                },
+                metadata = textParts.firstOrNull {
+                    it.metadata?.get("mcp_error")?.toString() == "true"
+                }?.metadata,
             )
         ) + output.filter { it !is UIMessagePart.Text }
     }

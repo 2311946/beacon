@@ -703,6 +703,7 @@ class ResponseAPI(
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(jsonObject),
             promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

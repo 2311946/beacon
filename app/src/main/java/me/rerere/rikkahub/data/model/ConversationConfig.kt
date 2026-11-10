@@ -26,7 +26,21 @@ data class ConversationConfig(
     val mcpServers: Set<Uuid> = emptySet(),
     val workspaceId: Uuid? = null,
     val enabledSkills: Set<String> = emptySet(),
+    // 单聊聊天页是否显示助手状态；旧会话反序列化时默认开启。
+    val showAssistantStatus: Boolean = true,
+    // 群聊：消息ID -> 发言的助手ID。只有群聊会话会用到，单聊为空。
+    val speakerMap: Map<Uuid, Uuid> = emptyMap(),
+    // 标记为群聊会话，主聊天列表中过滤掉
+    val isGroupChat: Boolean = false,
 )
+
+/** 只改变显示偏好；草稿保持未绑定，不提前固定模型等配置。 */
+internal fun Conversation.withAssistantStatusVisibility(enabled: Boolean): Conversation =
+    if (config == null) {
+        copy(draftShowAssistantStatus = enabled)
+    } else {
+        copy(config = config.copy(showAssistantStatus = enabled))
+    }
 
 // 内置搜索是模型的开关，不在助手上，由调用方另行填入
 private fun Assistant.toConversationConfig() = ConversationConfig(
@@ -65,6 +79,7 @@ fun Conversation.withAssistantUpdate(updated: Assistant, settings: Settings): Co
     } else {
         copy(
             config = updated.toConversationConfig().copy(
+                showAssistantStatus = config.showAssistantStatus,
                 builtInSearch = if (updated.chatModelId == config.chatModelId) {
                     config.builtInSearch
                 } else {
@@ -133,7 +148,11 @@ fun Conversation.bindConfig(settings: Settings): Conversation {
     }
     val assistant = settings.getAssistantOf(this)
     return copy(
-        config = assistant.toConversationConfig().copy(chatModelId = model?.id, builtInSearch = builtInSearch),
+        config = assistant.toConversationConfig().copy(
+            chatModelId = model?.id,
+            builtInSearch = builtInSearch,
+            showAssistantStatus = draftShowAssistantStatus,
+        ),
         // 旧版本允许会话单独绑定注入，这类会话保留自己的绑定
         modeInjectionIds = modeInjectionIds.ifEmpty { assistant.modeInjectionIds },
         lorebookIds = lorebookIds.ifEmpty { assistant.lorebookIds },

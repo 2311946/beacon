@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.uuid.Uuid
 
@@ -39,6 +40,23 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd(textContent.text.toString() + content)
     }
 
+    /** Insert into the current selection so stickers travel with the draft, edits and queued text. */
+    fun insertSticker(url: String) {
+        val escapedUrl = url.replace("\\", "%5C")
+            .replace("<", "%3C")
+            .replace(">", "%3E")
+            .replace(" ", "%20")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        val markdown = "![表情](<$escapedUrl>)"
+        textContent.edit {
+            val start = selection.min
+            val end = selection.max
+            replace(start, end, markdown)
+            selection = TextRange(start + markdown.length)
+        }
+    }
+
     fun setContents(contents: List<UIMessagePart>) {
         val lastTextIndex = contents.indexOfLast { it is UIMessagePart.Text }
         val text = if (lastTextIndex >= 0) {
@@ -67,7 +85,7 @@ class ChatInputState {
                     when {
                         index == editedTextIndex -> {
                             if (text.isNotBlank()) {
-                                merged.add(UIMessagePart.Text(text))
+                                merged.add((part as UIMessagePart.Text).copy(text = text))
                             }
                         }
 

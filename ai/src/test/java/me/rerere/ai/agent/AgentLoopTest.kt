@@ -58,6 +58,44 @@ class AgentLoopTest {
         hooks: AgentHooks = this.hooks,
     ) = runAgent(request, hooks).toList()
 
+    @Test
+    fun `fresh streaming reply never reuses previous assistant identity`() = runTest {
+        val previous = UIMessage.assistant("上一位角色的回复")
+        provider.stream { text("新的回复"); finish() }
+        val history = listOf(UIMessage.user("hi"), previous)
+        val finished = runToEnd(request(messages = history).copy(
+            continueLastAssistantMessage = false,
+        )).finished().message
+        assertFalse(previous.id == finished.id)
+        assertEquals(listOf("新的回复"), finished.texts())
+        assertEquals(history, hooks.prepared.single())
+        assertEquals(listOf("上一位角色的回复"), previous.texts())
+    }
+
+    @Test
+    fun `fresh non streaming reply preserves assistant history without appending its text`() = runTest {
+        val previous = UIMessage.assistant("旧回复")
+        provider.result(UIMessage.assistant("重生成回复"))
+        val history = listOf(UIMessage.user("hi"), previous)
+        val finished = runToEnd(request(messages = history, stream = false).copy(
+            continueLastAssistantMessage = false,
+        )).finished().message
+        assertFalse(previous.id == finished.id)
+        assertEquals(listOf("重生成回复"), finished.texts())
+        assertEquals(history, hooks.prepared.single())
+    }
+
+    @Test
+    fun `default continuation still retains original assistant identity`() = runTest {
+        val previous = UIMessage.assistant("已有内容")
+        provider.stream { text("续写内容"); finish() }
+        val finished = runToEnd(request(messages = listOf(UIMessage.user("hi"), previous)))
+            .finished().message
+        assertEquals(previous.id, finished.id)
+        assertTrue(finished.texts().joinToString("").contains("已有内容"))
+        assertTrue(finished.texts().joinToString("").contains("续写内容"))
+    }
+
     // 模拟会改内容的输出转换：给这一步新增的文本加后缀，之前步骤的文本不能被重复处理，也不能漏掉
     private val suffixHooks = object : AgentHooks by hooks {
         override suspend fun finishStep(message: UIMessage, newPartsFrom: Int) = message.copy(
@@ -65,6 +103,56 @@ class AgentLoopTest {
                 if (index >= newPartsFrom && part is UIMessagePart.Text) part.copy(text = part.text + "!") else part
             }
         )
+    }
+
+    @Test
+    fun `blank streaming reply retries and preserves message identity`() = runTest {
+        provider.stream { text(" \n\t"); finish() }
+        provider.stream { text("hello"); finish() }
+        val events = runToEnd()
+        assertEquals(listOf("hello"), events.finished().message.texts())
+        assertEquals(2, provider.requests.size)
+        assertEquals(1, events.filterIsInstance<AgentEvent.Retrying>().size)
+        assertEquals(1, events.messageIds().size)
+    }
+
+    @Test
+    fun `four blank attempts yield visible failure hint without blank parts`() = runTest {
+        repeat(4) { provider.result(UIMessage.assistant("\n  ")) }
+        val events = runToEnd(request(stream = false))
+        assertEquals(4, provider.requests.size)
+        assertEquals(3, events.filterIsInstance<AgentEvent.Retrying>().size)
+        assertEquals(listOf("回复为空，请重试"), events.finished().message.texts())
+    }
+
+    @Test
+    fun `empty retries include billed usage and keep original request context`() = runTest {
+        provider.result(UIMessage.assistant(""), TokenUsage(promptTokens = 10, completionTokens = 2))
+        provider.result(UIMessage.assistant("ok"), TokenUsage(promptTokens = 20, completionTokens = 3))
+        val finished = runToEnd(request(stream = false)).finished()
+        assertEquals(30, finished.message.usage?.promptTokens)
+        assertEquals(5, finished.message.usage?.completionTokens)
+        assertEquals(provider.requests[0].messages, provider.requests[1].messages)
+    }
+
+    @Test
+    fun `valid image-only reply does not retry`() = runTest {
+        provider.result(assistant(UIMessagePart.Image("https://example.com/image.png")))
+        runToEnd(request(stream = false))
+        assertEquals(1, provider.requests.size)
+    }
+
+    @Test
+    fun `empty content after output transform is retried`() = runTest {
+        provider.result(UIMessage.assistant("hidden"))
+        provider.result(UIMessage.assistant("visible"))
+        val transform = object : AgentHooks by hooks {
+            override suspend fun finishStep(message: UIMessage, newPartsFrom: Int) = message.copy(
+                parts = message.parts.filterNot { it is UIMessagePart.Text && it.text == "hidden" },
+            )
+        }
+        assertEquals(listOf("visible"), runToEnd(request(stream = false), transform).finished().message.texts())
+        assertEquals(2, provider.requests.size)
     }
 
     @Test

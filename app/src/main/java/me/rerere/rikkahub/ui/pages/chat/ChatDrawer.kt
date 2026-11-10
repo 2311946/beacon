@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.icu.text.BreakIterator
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -57,6 +58,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.BubbleChat
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
@@ -102,12 +104,25 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
+private fun limitManualAssistantStatus(text: String): String {
+    val singleLine = text.filterNot { it.isISOControl() || it == '\u2028' || it == '\u2029' }
+    val iterator = BreakIterator.getCharacterInstance(java.util.Locale.ROOT).apply { setText(singleLine) }
+    var end = iterator.first()
+    repeat(10) {
+        val next = iterator.next()
+        if (next == BreakIterator.DONE) return singleLine
+        end = next
+    }
+    return singleLine.substring(0, end)
+}
+
 @Composable
 fun ChatDrawerContent(
     navController: Navigator,
     vm: ChatVM,
     settings: Settings,
     current: Conversation,
+    isVisible: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -116,6 +131,21 @@ fun ChatDrawerContent(
 
     val activity = context as ComponentActivity
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = activity)
+
+    LaunchedEffect(isVisible, settings.init) {
+        if (isVisible && !settings.init) {
+            drawerVm.refreshAssistantStatuses()
+        }
+    }
+
+    var statusAssistantId by remember { mutableStateOf<Uuid?>(null) }
+    var statusText by remember { mutableStateOf("") }
+    val editAssistantStatus: (Assistant) -> Unit = { assistant ->
+        statusText = limitManualAssistantStatus(
+            settings.assistantStatuses[assistant.id.toString()]?.displayText.orEmpty()
+        )
+        statusAssistantId = assistant.id
+    }
 
     val conversations = drawerVm.conversations.collectAsLazyPagingItems()
     val folders by drawerVm.folders.collectAsStateWithLifecycle()
@@ -309,6 +339,8 @@ fun ChatDrawerContent(
             }
 
             ConversationList(
+                settings = settings,
+                onSetAssistantStatus = editAssistantStatus,
                 current = current,
                 conversations = conversations,
                 conversationJobs = conversationJobs.keys,
@@ -354,6 +386,8 @@ fun ChatDrawerContent(
             // 助手选择器
             AssistantPicker(
                 settings = settings,
+                onEditStatus = editAssistantStatus,
+                onRefreshStatuses = drawerVm::refreshAssistantStatuses,
                 onSelectAssistant = { assistant ->
                     val updateJob = vm.updateSettings { it.copy(assistantId = assistant.id) }
                     scope.launch {
@@ -461,6 +495,53 @@ fun ChatDrawerContent(
                     },
                 )
             }
+        }
+    }
+
+    statusAssistantId?.let { assistantId ->
+        val assistant = settings.assistants.firstOrNull { it.id == assistantId }
+        if (assistant != null) {
+            AlertDialog(
+                onDismissRequest = { statusAssistantId = null },
+                title = { Text(stringResource(R.string.chat_page_set_assistant_status)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(assistant.name.ifEmpty { stringResource(R.string.assistant_page_default_assistant) })
+                        OutlinedTextField(
+                            value = statusText,
+                            onValueChange = { statusText = limitManualAssistantStatus(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text(stringResource(R.string.chat_page_assistant_status)) },
+                            supportingText = { Text(stringResource(R.string.chat_page_assistant_status_hint)) },
+                        )
+                        TextButton(
+                            onClick = {
+                                drawerVm.setManualAssistantStatus(assistantId, null)
+                                statusAssistantId = null
+                            }
+                        ) {
+                            Text(stringResource(R.string.chat_page_assistant_status_auto))
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = statusText.isNotBlank(),
+                        onClick = {
+                            drawerVm.setManualAssistantStatus(assistantId, statusText.trim())
+                            statusAssistantId = null
+                        }
+                    ) {
+                        Text(stringResource(R.string.chat_page_save))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { statusAssistantId = null }) {
+                        Text(stringResource(R.string.chat_page_cancel))
+                    }
+                },
+            )
         }
     }
 
@@ -761,6 +842,13 @@ private fun DrawerActions(navController: Navigator) {
             icon = HugeIcons.LanguageCircle,
             text = stringResource(R.string.chat_page_menu_ai_translator),
             onClick = { navController.navigate(Screen.Translator) },
+        )
+
+        // 群聊入口
+        DrawerEntry(
+            icon = HugeIcons.BubbleChat,
+            text = stringResource(R.string.group_chat_title),
+            onClick = { navController.navigate(Screen.GroupChatList) },
         )
     }
 }

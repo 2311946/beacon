@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -53,6 +54,61 @@ class ConversationRepository(
             conversationEntityToConversation(entity, nodes)
         }
     }
+
+    /** 按会话更新时间（忽略置顶）查找最后一个选中分支中的真实消息。 */
+    suspend fun getLatestMessageOfAssistant(assistantId: Uuid): Pair<Uuid, UIMessage>? =
+        database.withTransaction {
+            val pageSize = 20
+            var conversationOffset = 0
+            var latest: Pair<Uuid, UIMessage>? = null
+            while (true) {
+                val conversations = conversationDAO.getRecentConversationSummariesOfAssistant(
+                    assistantId = assistantId.toString(),
+                    limit = pageSize,
+                    offset = conversationOffset,
+                )
+                if (conversations.isEmpty()) break
+                var latestInBatch: Pair<Uuid, UIMessage>? = null
+                for (conversation in conversations) {
+                    var nodeOffset = 0
+                    var latestInConversation: UIMessage? = null
+                    while (latestInConversation == null) {
+                        val nodes = messageNodeDAO.getTailNodesOfConversationPaged(
+                            conversationId = conversation.id,
+                            limit = pageSize,
+                            offset = nodeOffset,
+                        )
+                        if (nodes.isEmpty()) break
+                        for (node in nodes) {
+                            val message = JsonInstant.decodeFromString<List<UIMessage>>(node.messages)
+                                .getOrNull(node.selectIndex) ?: continue
+                            if (!message.isSynthetic && !message.isContextCheckpoint &&
+                                (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT)
+                            ) {
+                                latestInConversation = message
+                                break
+                            }
+                        }
+                        nodeOffset += nodes.size
+                        if (nodes.size < pageSize) break
+                    }
+                    val candidate = latestInConversation?.let { Uuid.parse(conversation.id) to it }
+                    if (candidate != null && (latestInBatch == null ||
+                            candidate.second.createdAt > latestInBatch.second.createdAt)
+                    ) {
+                        latestInBatch = candidate
+                    }
+                }
+                if (latestInBatch != null && (latest == null ||
+                        latestInBatch.second.createdAt > latest.second.createdAt)
+                ) {
+                    latest = latestInBatch
+                }
+                conversationOffset += conversations.size
+                if (conversations.size < pageSize) break
+            }
+            latest
+        }
 
     fun getConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO

@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.di
 
-import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
-import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
@@ -12,6 +9,7 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.GroupChatService
 import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.floating.ChatFloatingWindows
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
@@ -26,6 +24,15 @@ import org.koin.dsl.module
 
 val appModule = module {
     single<Json> { JsonInstant }
+
+    single {
+        me.rerere.rikkahub.data.ai.AssistantStatusManager(
+            settingsStore = get(),
+            providerManager = get(),
+            usageRecorder = get(),
+            conversationRepository = get(),
+        )
+    }
 
     single {
         AppEventBus()
@@ -52,14 +59,6 @@ val appModule = module {
 
     single {
         TTSManager(get())
-    }
-
-    single {
-        Firebase.crashlytics
-    }
-
-    single {
-        Firebase.analytics
     }
 
     single {
@@ -130,6 +129,7 @@ val appModule = module {
             appScope = get(),
             appEventBus = get(),
             settingsStore = get(),
+            assistantStatusManager = get(),
             conversationRepo = get(),
             requestFactory = get(),
             memoryConsolidationScheduler = get(),
@@ -137,7 +137,19 @@ val appModule = module {
             metaGenerator = get(),
             mcpManager = get(),
             filesManager = get(),
-            folderRepository = get()
+            folderRepository = get(),
+            mediaCreationService = get(),
+            mediaCreationRepository = get(),
+        )
+    }
+
+    single {
+        GroupChatService(
+            appScope = get(),
+            settingsStore = get(),
+            conversationRepo = get(),
+            chatService = get(),
+            providerManager = get(),
         )
     }
 

@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.core.net.toUri
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.ModelSnapshot
@@ -37,8 +39,14 @@ data class Conversation(
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
     @Transient
-    val newConversation: Boolean = false
+    val newConversation: Boolean = false,
+    // 草稿尚未绑定模型等配置时暂存显示偏好，首次落库时转入 config。
+    @Transient
+    val draftShowAssistantStatus: Boolean = true,
 ) {
+    val showAssistantStatus: Boolean
+        get() = config?.showAssistantStatus ?: draftShowAssistantStatus
+
     val files: List<Uri>
         get() = messageNodes
             .flatMap { node -> node.messages.flatMap { it.parts } }
@@ -199,6 +207,27 @@ internal fun Conversation.withoutUnresumableToolCalls(untilNode: Int = messageNo
     return if (nodes == messageNodes) this else copy(messageNodes = nodes)
 }
 
+internal fun Conversation.withChatImageState(messageId: Uuid, state: ChatImageGenerationState): Conversation =
+    updateChatImageMessage(messageId) { it.withChatImageGenerationState(state) }
+
+internal fun Conversation.withChatImageOutput(messageId: Uuid, recordId: Uuid, image: UIMessagePart.Image): Conversation =
+    updateChatImageMessage(messageId) { message ->
+        val state = message.chatImageGenerationState()
+        if (state == null || state.recordId != recordId || state.status == ChatImageGenerationStatus.SUCCEEDED) message else {
+            message.copy(parts = message.parts + image).withChatImageGenerationState(
+                state.copy(status = ChatImageGenerationStatus.SUCCEEDED, error = null),
+            )
+        }
+    }
+
+private inline fun Conversation.updateChatImageMessage(messageId: Uuid, transform: (UIMessage) -> UIMessage): Conversation {
+    val index = messageNodes.indexOfFirst { node -> node.messages.any { it.id == messageId } }
+    if (index == -1) return this
+    val node = messageNodes[index]
+    val messages = node.messages.map { if (it.id == messageId) transform(it) else it }
+    return copy(messageNodes = messageNodes.toMutableList().also { it[index] = node.copy(messages = messages) })
+}
+
 fun UIMessage.toMessageNode(): MessageNode {
     return MessageNode(
         messages = listOf(this),
@@ -206,12 +235,59 @@ fun UIMessage.toMessageNode(): MessageNode {
     )
 }
 
-/**
- * 给还没有模型快照的消息补上快照，没有可补的消息时原样返回。
- *
- * 在保存会话时调用：新生成的消息由此带上快照，引入快照之前的旧消息也在会话下次保存时补齐。
- * 模型已经被删除的旧消息无从补起，保持原样。
- */
+/** 通话来源只用于界面与请求上下文，不改消息正文。 */
+internal const val VOICE_CALL_MESSAGE_METADATA = "beacon_voice_call"
+internal const val VOICE_CALL_ID_METADATA = "beacon_voice_call_id"
+
+internal fun UIMessage.isVoiceCallMessage(): Boolean =
+    parts.any { part ->
+        (part.metadata?.get(VOICE_CALL_MESSAGE_METADATA) as? JsonPrimitive)?.booleanOrNull == true
+    }
+
+internal fun UIMessage.withVoiceCallMetadata(callId: String): UIMessage = copy(
+    parts = parts.map { part ->
+        val metadata = JsonObject(part.metadata.orEmpty() + mapOf(
+            VOICE_CALL_MESSAGE_METADATA to JsonPrimitive(true),
+            VOICE_CALL_ID_METADATA to JsonPrimitive(callId),
+        ))
+        when (part) {
+            is UIMessagePart.Text -> part.copy(metadata = metadata)
+            is UIMessagePart.Image -> part.copy(metadata = metadata)
+            is UIMessagePart.Video -> part.copy(metadata = metadata)
+            is UIMessagePart.Audio -> part.copy(metadata = metadata)
+            is UIMessagePart.Document -> part.copy(metadata = metadata)
+            is UIMessagePart.Reasoning -> part.copy(metadata = metadata)
+            is UIMessagePart.Search -> part
+            is UIMessagePart.ToolCall -> part.copy(metadata = metadata)
+            is UIMessagePart.ToolResult -> part.copy(metadata = metadata)
+            is UIMessagePart.ServerTool -> part.copy(metadata = metadata)
+            is UIMessagePart.Tool -> part.copy(metadata = metadata)
+        }
+    },
+)
+
+internal fun UIMessage.voiceCallIdOrNull(): String? =
+    if (!isVoiceCallMessage()) null else parts.firstNotNullOfOrNull { part ->
+        (part.metadata?.get(VOICE_CALL_ID_METADATA) as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+    }
+
+/** 只预览正文首句，不泄露思考或工具结果；按 code point 限长，不截断 emoji 代理对。 */
+internal fun UIMessage.voiceCallPreview(): String {
+    val text = parts.filterIsInstance<UIMessagePart.Text>()
+        .joinToString("\n") { it.text }.trim()
+    if (text.isBlank()) return "语音通话消息"
+    val end = text.indexOfFirst { it in "。！？!?\n\r" || it == '.' }
+    val first = if (end >= 0) text.take(end + 1).trim() else text
+    val singleLine = first.replace(Regex("\\s+"), " ")
+    return if (singleLine.codePointCount(0, singleLine.length) > 60) {
+        singleLine.substring(0, singleLine.offsetByCodePoints(0, 60)) + "…"
+    } else singleLine
+}
+
+private val JsonPrimitive.booleanOrNull: Boolean?
+    get() = content.toBooleanStrictOrNull()
+
+/** 新生成和旧消息在保存时补上模型快照；已删除模型保持原样。 */
 fun Conversation.fillModelSnapshots(settings: Settings): Conversation {
     val models = settings.providers.flatMap { it.models }.associateBy { it.id }
     val nodes = messageNodes.map { node ->
@@ -244,6 +320,54 @@ internal fun List<UIMessagePart>.localFileUrls(): Set<String> = buildSet {
         }
         if (url?.startsWith("file://") == true) add(url)
     }
+}
+
+/**
+ * 群聊：把某条消息标记为某个助手说的。
+ *
+ * 记录在 [ConversationConfig.speakerMap] 里，随会话一起持久化；单聊不会调用，因此 map 为空。
+ */
+internal fun Conversation.withSpeaker(messageId: Uuid, assistantId: Uuid): Conversation {
+    val config = this.config ?: ConversationConfig()
+    if (config.speakerMap[messageId] == assistantId) return this
+    return copy(config = config.copy(speakerMap = config.speakerMap + (messageId to assistantId)))
+}
+
+/** 从当前用户消息重跑群聊：移除后续历史和所有被移除分支的角色映射。 */
+internal fun Conversation.prepareGroupRegeneration(messageId: Uuid): Conversation {
+    check(config?.isGroupChat == true) { "不是群聊会话" }
+    val index = messageNodes.indexOfFirst { it.currentMessage.id == messageId }
+    check(index >= 0 && messageNodes[index].currentMessage.role == MessageRole.USER) { "原用户消息已不存在或不在当前分支" }
+    val retained = messageNodes.take(index + 1)
+    val retainedIds = retained.flatMap { it.messages }.map { it.id }.toSet()
+    return copy(
+        messageNodes = retained,
+        chatSuggestions = emptyList(),
+        config = config?.copy(speakerMap = config.speakerMap.filterKeys { it in retainedIds }),
+    )
+}
+
+/** 群聊助手消息只认原消息映射，不接受调用方把它换成其他角色。 */
+internal fun Conversation.regenerationSpeaker(messageId: Uuid, requestedSpeakerId: Uuid?): Uuid? {
+    if (config?.isGroupChat != true) return requestedSpeakerId
+    val node = checkNotNull(getMessageNodeByMessageId(messageId)) { "原消息已不存在" }
+    val message = node.messages.first { it.id == messageId }
+    if (message.role != MessageRole.ASSISTANT) {
+        return checkNotNull(requestedSpeakerId) { "请选择群聊回复角色" }
+    }
+    return checkNotNull(config.speakerMap[messageId]) {
+        "找不到原消息的角色记录，无法重新生成；不会自动切换为其他角色"
+    }
+}
+
+/** 重新生成的目标节点优先于历史末条助手消息，连续群聊消息也不能写错分支。 */
+internal fun Conversation.replyNodeForTurn(regenerateNodeId: Uuid?, speakerAssistantId: Uuid?): Uuid {
+    if (regenerateNodeId != null) {
+        check(messageNodes.any { it.id == regenerateNodeId }) { "原消息节点已不存在" }
+        return regenerateNodeId
+    }
+    if (speakerAssistantId != null) return Uuid.random()
+    return messageNodes.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }?.id ?: Uuid.random()
 }
 
 /** 替换本地附件的地址，覆盖范围与 [localFileUrls] 一致，包含工具结果中的嵌套附件。 */

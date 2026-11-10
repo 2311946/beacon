@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -34,7 +35,69 @@ class UsageRecorderTest {
     private val params = TextGenerationParams(model = model)
     private val tag = UsageTag(UsageSource.CHAT, assistantId = Uuid.random(), conversationId = Uuid.random())
 
-    private fun TestScope.recorder() = UsageRecorder(dao, this)
+    private lateinit var budgetStore: me.rerere.rikkahub.data.datastore.UsageBudgetStore
+
+    private fun TestScope.recorder(): UsageRecorder {
+        val values = java.util.concurrent.ConcurrentHashMap<String, String>()
+        val preferences = java.lang.reflect.Proxy.newProxyInstance(
+            android.content.SharedPreferences::class.java.classLoader,
+            arrayOf(android.content.SharedPreferences::class.java),
+        ) { _, method, args ->
+            when (method.name) {
+                "getString" -> values[args!![0]] ?: args[1]
+                "edit" -> {
+                    lateinit var editor: android.content.SharedPreferences.Editor
+                    val pending = mutableMapOf<String, String>()
+                    editor = java.lang.reflect.Proxy.newProxyInstance(
+                        android.content.SharedPreferences.Editor::class.java.classLoader,
+                        arrayOf(android.content.SharedPreferences.Editor::class.java),
+                    ) { _, editMethod, editArgs ->
+                        when (editMethod.name) {
+                            "putString" -> { pending[editArgs!![0] as String] = editArgs[1] as String; editor }
+                            "commit" -> { values.putAll(pending); true }
+                            else -> error(editMethod.name)
+                        }
+                    } as android.content.SharedPreferences.Editor
+                    editor
+                }
+                else -> error("Unexpected preferences call: ${method.name}")
+            }
+        } as android.content.SharedPreferences
+        budgetStore = me.rerere.rikkahub.data.datastore.UsageBudgetStore(preferences)
+        return UsageRecorder(
+            dao = dao,
+            budgetStore = budgetStore,
+            scope = this,
+        )
+    }
+
+    @Test
+    fun `cost only response is recorded without token counts`() = runTest {
+        recorder().wrap(FakeProvider(result = TokenUsage(costYuan = "0.25")), tag)
+            .generateText(setting, emptyList(), params)
+        // 等实际 IO 提交完成，不以 testScheduler 的队列空替代存储完成。
+        testScheduler.advanceUntilIdle()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5000) { budgetStore.stateFlow.first { it.spentYuan == 0.25 } }
+        }
+        assertEquals(1, dao.records.size)
+    }
+
+    @Test
+    fun `repeated cost snapshots charge only final total once`() = runTest {
+        val provider = FakeProvider(chunks = flow {
+            emit(StreamChunk.Usage(TokenUsage(10, costYuan = "0.1")))
+            emit(StreamChunk.Usage(TokenUsage(10, costYuan = "0.3")))
+            emit(StreamChunk.Usage(TokenUsage(10, costYuan = "0.3")))
+        })
+        recorder().wrap(provider, tag).streamText(setting, emptyList(), params).toList()
+        testScheduler.advanceUntilIdle()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5000) { budgetStore.stateFlow.first { it.spentYuan == 0.3 } }
+        }
+        assertEquals(1, dao.records.size)
+        assertEquals(0.3, budgetStore.stateFlow.value.spentYuan, 0.0)
+    }
 
     @Test
     fun `generateText records the usage with its tag`() = runTest {

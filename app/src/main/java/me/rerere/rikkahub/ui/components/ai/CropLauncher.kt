@@ -31,6 +31,7 @@ internal fun useCropLauncher(
     onCroppedImageReady: (Uri) -> Unit,
     onCleanup: (() -> Unit)? = null,
     aspectRatio: Float? = null,
+    maxResultSize: Int = 4096,
 ): (Uri) -> Unit {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -48,6 +49,7 @@ internal fun useCropLauncher(
         ImageCropDialog(
             image = uri,
             aspectRatio = aspectRatio,
+            maxResultSize = maxResultSize,
             onDismiss = ::finish,
             onConfirm = { bitmap ->
                 if (saving) return@ImageCropDialog

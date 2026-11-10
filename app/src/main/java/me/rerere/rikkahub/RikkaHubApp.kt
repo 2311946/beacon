@@ -22,6 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.rerere.common.android.appTempFolder
@@ -39,6 +42,7 @@ import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.service.MediaCreationService
+import me.rerere.rikkahub.service.ProactiveMessageScheduler
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
@@ -58,10 +62,12 @@ const val CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID = "chat_live_update"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
+const val PROACTIVE_MESSAGE_NOTIFICATION_CHANNEL_ID = "proactive_message"
 
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        Log.d("AutonomousWakeup", "[app-onCreate] wiring=v2 package=$packageName version=${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE} debug=${BuildConfig.DEBUG} pid=${android.os.Process.myPid()}")
         // Restore files and settings before eager Koin singletons or workers can access them.
         try {
             val restored = runBlocking(Dispatchers.IO) {
@@ -77,10 +83,14 @@ class RikkaHubApp : Application() {
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
-            workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
+            Log.d("AutonomousWakeup", "[workmanager-init-start] initialized=${androidx.work.WorkManager.isInitialized()}")
+            workManagerFactory()
+            Log.d("AutonomousWakeup", "[workmanager-init-end] initialized=${androidx.work.WorkManager.isInitialized()}")
         }
+        Log.d("AutonomousWakeup", "[app] Koin/workManagerFactory configured")
         this.createNotificationChannel()
+        observeAutonomousWakeup()
 
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
@@ -120,6 +130,44 @@ class RikkaHubApp : Application() {
         incrementLaunchCount()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+    private fun observeAutonomousWakeup() {
+        Log.d("AutonomousWakeup", "[app-observer-launch]")
+        get<AppScope>().launch(Dispatchers.IO) {
+            // 初始化/加载失败也归入同一日志标签；失败后重建订阅，不被去重键卡住。
+            while (true) {
+                try {
+                    Log.d("AutonomousWakeup", "[app-await-settings] start")
+                    val settingsStore = get<SettingsStore>()
+                    val loaded = kotlinx.coroutines.withTimeout(30_000) { settingsStore.awaitLoaded() }
+                    Log.d("AutonomousWakeup", "[settings-loaded] enabled=${loaded.autonomousWakeup.enabled} roles=${loaded.autonomousWakeup.assistantIds.size}")
+                    // 冷启动先恢复持久化开关对应的唯一周期任务，不依赖设置页操作。
+                    // sync 在锁内重新读取最新配置，避免加载后用户关闭开关却提交旧快照。
+                    Log.d("AutonomousWakeup", "[startup-restore-start] enabled=${loaded.autonomousWakeup.enabled}")
+                    ProactiveMessageScheduler.sync(this@RikkaHubApp, settingsStore, source = "app-startup")
+                    Log.d("AutonomousWakeup", "[startup-restore-complete]")
+                    settingsStore.settingsFlow
+                        .map { settings ->
+                            val wakeup = settings.autonomousWakeup
+                            Triple(wakeup.enabled, wakeup.intervalMinutes, wakeup.assistantIds)
+                        }
+                        .distinctUntilChanged()
+                        .collect {
+                            Log.d("AutonomousWakeup", "[app-dispatch] enabled=${it.first} interval=${it.second} roles=${it.third.size}")
+                            ProactiveMessageScheduler.sync(this@RikkaHubApp, settingsStore, source = "app-observer")
+                        }
+                } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                    Log.e("AutonomousWakeup", "[app-settings-timeout] retry in 30s", e)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    Log.d("AutonomousWakeup", "[app-observer-cancelled]")
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("AutonomousWakeup", "[app-observer-failed] retry in 30s", e)
+                }
+                delay(30_000)
+            }
+        }
     }
 
     private fun resumeMediaCreations() {
@@ -302,6 +350,17 @@ class RikkaHubApp : Application() {
             .setShowBadge(false)
             .build()
         notificationManager.createNotificationChannel(memoryDreamChannel)
+
+        val proactiveMessageChannel = NotificationChannelCompat
+            .Builder(PROACTIVE_MESSAGE_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
+            .setName("自主唤醒消息")
+            .setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setVibrationEnabled(true)
+            .setVibrationPattern(longArrayOf(0, 200, 100, 200))
+            .build()
+        notificationManager.createNotificationChannel(proactiveMessageChannel)
     }
 
     override fun onTerminate() {

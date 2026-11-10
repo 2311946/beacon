@@ -51,6 +51,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -162,7 +163,10 @@ fun MarkdownBlock(
     }
 
     val currentOnClickCitation by rememberUpdatedState(onClickCitation)
-    val components = remember(enableLatexRendering) {
+    val stickerContext = LocalContext.current
+    val stickerStore = remember(stickerContext) { me.rerere.rikkahub.data.datastore.StickerStore.get(stickerContext) }
+    val stickerGroups by stickerStore.groups.collectAsStateWithLifecycle()
+    val components = remember(enableLatexRendering, stickerGroups) {
         MarkdownComponents(
             codeBlock = { block ->
                 HighlightCodeBlock(
@@ -173,14 +177,22 @@ fun MarkdownBlock(
                 )
             },
             image = { image, _ ->
-                ZoomableAsyncImage(
-                    model = rememberWorkspaceImageUrl(image.url),
-                    contentDescription = image.alt,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .widthIn(min = 120.dp)
-                        .heightIn(min = 120.dp),
-                )
+                if (me.rerere.rikkahub.data.datastore.isStickerImage(image.url, image.alt, stickerGroups)) {
+                    ChatStickerImage(
+                        model = rememberWorkspaceImageUrl(image.url),
+                        contentDescription = image.alt,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)),
+                    )
+                } else {
+                    ZoomableAsyncImage(
+                        model = rememberWorkspaceImageUrl(image.url),
+                        contentDescription = image.alt,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .widthIn(min = 120.dp)
+                            .heightIn(min = 120.dp),
+                    )
+                }
             },
             // 禁用 LaTeX 渲染时不注册公式组件，公式以等宽字体显示源码
             mathBlock = if (enableLatexRendering) {
@@ -205,8 +217,11 @@ fun MarkdownBlock(
         )
     }
 
+    val imageCompatibleContent = remember(content, streaming) {
+        me.rerere.rikkahub.data.model.StickerReplyResolver.normalizeMarkdownImages(content, streaming)
+    }
     MaterialMarkdown(
-        content = content,
+        content = imageCompatibleContent,
         modifier = modifier.padding(horizontal = 4.dp),
         style = style,
         theme = theme,

@@ -183,6 +183,7 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
         val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(usageJson),
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = promptTokens + completionTokens,

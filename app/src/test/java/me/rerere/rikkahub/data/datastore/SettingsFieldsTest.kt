@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.datastore
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.descriptors.elementNames
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ProviderSetting
@@ -10,6 +11,11 @@ import me.rerere.asr.ASRProviderSetting
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantStatus
+import me.rerere.rikkahub.data.model.GroupChat
+import me.rerere.rikkahub.data.model.GroupChatDefaults
+import me.rerere.rikkahub.data.model.AutonomousWakeupSettings
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
@@ -44,6 +50,41 @@ class SettingsFieldsTest {
         val preferences = mutablePreferencesOf().apply { putSettings(SAMPLE) }
 
         assertEquals(SAMPLE, preferences.toSettings())
+    }
+
+    @Test
+    fun `assistant status preserves manual priority and restores auto after clearing`() {
+        val key = id(20).toString()
+        val preferences = mutablePreferencesOf().apply { putSettings(SAMPLE) }
+        val restored = preferences.toSettings()
+        assertEquals("想你了🥺", restored.assistantStatuses.getValue(key).displayText)
+        val auto = restored.copy(assistantStatuses = restored.assistantStatuses +
+            (key to restored.assistantStatuses.getValue(key).copy(manualText = null)))
+        preferences.putSettings(auto, persisted = restored)
+        assertEquals("刚说过早安☀️", preferences.toSettings().assistantStatuses.getValue(key).displayText)
+        assertEquals(emptyMap<String, AssistantStatus>(), emptyPreferences().toSettings().assistantStatuses)
+        val legacy = JsonInstant.decodeFromString<Settings>("""{"assistantId":"00000000-0000-0000-0000-000000000020"}""")
+        assertEquals(emptyMap<String, AssistantStatus>(), legacy.assistantStatuses)
+    }
+
+    @Test
+    fun `legacy display settings fall back to global call voice`() {
+        val restored = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
+        assertEquals(null, restored.voiceCallTtsProvider)
+        assertEquals("existing", restored.userNickname)
+    }
+
+    @Test
+    fun `independent call voice persists without changing global voice`() {
+        val provider = me.rerere.tts.provider.TTSProviderSetting.OpenAI(voice = "nova")
+        val settings = SAMPLE.copy(displaySetting = SAMPLE.displaySetting.copy(voiceCallTtsProvider = provider))
+        val preferences = mutablePreferencesOf().apply { putSettings(settings) }
+        val restored = preferences.toSettings()
+        assertEquals(provider, restored.displaySetting.voiceCallTtsProvider)
+        assertEquals(SAMPLE.ttsProviders, restored.ttsProviders)
+        assertEquals(SAMPLE.selectedTTSProviderId, restored.selectedTTSProviderId)
+        preferences.putSettings(restored.copy(displaySetting = restored.displaySetting.copy(voiceCallTtsProvider = null)), persisted = restored)
+        assertEquals(null, preferences.toSettings().displaySetting.voiceCallTtsProvider)
     }
 
     // 这里的 key 名和取值就是用户盘上的格式，改动它们等于丢掉已有的设置
@@ -96,6 +137,29 @@ class SettingsFieldsTest {
     }
 
     @Test
+    fun `legacy group values migrate to overrides and reset survives serialization`() {
+        val legacy = JsonInstant.decodeFromString<GroupChat>(
+            """{"autoChatRounds":6,"autoModeDelay":8,"singleChatContextCount":9,"activationStrategy":"LIST"}"""
+        )
+        assertEquals(6, legacy.autoChatRoundsOverride)
+        assertEquals(8, legacy.autoModeDelayOverride)
+        val reset = legacy.copy(autoChatRoundsOverride = null, autoModeDelayOverride = null)
+        val restored = JsonInstant.decodeFromString<GroupChat>(JsonInstant.encodeToString(reset))
+        val defaults = GroupChatDefaults(autoChatRounds = 3, autoModeDelay = 4)
+        assertEquals(3, restored.resolved(defaults).autoChatRounds)
+        assertEquals(4, restored.resolved(defaults).autoModeDelay)
+        assertEquals(9, restored.resolved(defaults).singleChatContextCount)
+    }
+
+    @Test
+    fun `new group follows current defaults unless overridden`() {
+        val group = GroupChat()
+        assertEquals(7, group.resolved(GroupChatDefaults(autoChatRounds = 7)).autoChatRounds)
+        assertEquals(2, group.copy(autoChatRoundsOverride = 2)
+            .resolved(GroupChatDefaults(autoChatRounds = 7)).autoChatRounds)
+    }
+
+    @Test
     fun `only changed fields are written`() {
         val preferences = mutablePreferencesOf().apply { putSettings(SAMPLE) }
         // 盘上的值故意和已落盘的那份不一致：没变的字段如果也被重写，它就会变回去
@@ -138,6 +202,10 @@ private val SAMPLE = Settings(
     assistantId = id(20),
     providers = listOf(ProviderSetting.OpenAI(id = id(31), name = "Provider")),
     assistants = listOf(Assistant(id = id(20), name = "Assistant")),
+    assistantStatuses = mapOf(id(20).toString() to AssistantStatus("刚说过早安☀️", 1_000L, "想你了🥺")),
+    groupChats = listOf(GroupChat(id = id(40), name = "Group", memberIds = listOf(id(20)))),
+    groupChatDefaults = GroupChatDefaults(autoChatRounds = 4),
+    autonomousWakeup = AutonomousWakeupSettings(enabled = true, assistantIds = setOf(id(20))),
     assistantTags = listOf(Tag(id = id(7), name = "tag")),
     searchServices = listOf(
         SearchServiceOptions.BingLocalOptions(id = id(21)),
@@ -150,6 +218,7 @@ private val SAMPLE = Settings(
     s3Config = S3Config(bucket = "backup"),
     uploadS3Config = S3Config(bucket = "upload"),
     mediaGenerationProviders = listOf(MediaGenerationProviderSetting.OpenAI(id = id(9))),
+    chatImageGeneration = me.rerere.rikkahub.data.model.ChatImageGenerationConfig(automatic = true),
     ttsProviders = DEFAULT_TTS_PROVIDERS.take(1),
     selectedTTSProviderId = id(10),
     defaultTTSPlaybackSpeed = 1.5f,
@@ -194,7 +263,11 @@ private val STORED_KEYS = setOf(
     "providers",
     "select_assistant",
     "assistants",
+    "assistant_statuses",
     "assistant_tags",
+    "group_chats",
+    "group_chat_defaults",
+    "autonomous_wakeup",
     "search_services",
     "search_common",
     "search_selected",
@@ -203,6 +276,7 @@ private val STORED_KEYS = setOf(
     "s3_config",
     "upload_s3_config",
     "media_generation_providers",
+    "chat_image_generation",
     "tts_providers",
     "selected_tts_provider",
     "default_tts_playback_speed",

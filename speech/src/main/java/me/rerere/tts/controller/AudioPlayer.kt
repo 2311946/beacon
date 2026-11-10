@@ -31,8 +31,18 @@ import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class AudioPlayer(context: Context) {
-    private val player = ExoPlayer.Builder(context).build()
+class AudioPlayer(context: Context, forVoiceCall: Boolean = false) {
+    private val player = ExoPlayer.Builder(context).build().apply {
+        if (forVoiceCall) {
+            setAudioAttributes(
+                androidx.media3.common.AudioAttributes.Builder()
+                    .setUsage(androidx.media3.common.C.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_SPEECH)
+                    .build(),
+                false,
+            )
+        }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val _playbackState = MutableStateFlow(PlaybackState())

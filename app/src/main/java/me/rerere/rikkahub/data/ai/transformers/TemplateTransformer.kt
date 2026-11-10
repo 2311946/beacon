@@ -22,7 +22,7 @@ class TemplateTransformer(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val template = engine.getTemplate(ctx.assistant.id.toString())
+        val template = engine.getLiteralTemplate(ctx.assistant.messageTemplate)
         val timeZone = TimeZone.currentSystemDefault()
         return messages.map { message ->
             if (message.isSynthetic) return@map message

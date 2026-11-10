@@ -913,6 +913,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         val candidatesTokens = jsonObject["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         val totalTokens = jsonObject["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(jsonObject),
             promptTokens = promptTokens,
             completionTokens = candidatesTokens + thoughtTokens,
             totalTokens = totalTokens,

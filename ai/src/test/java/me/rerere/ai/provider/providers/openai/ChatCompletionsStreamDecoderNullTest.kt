@@ -7,6 +7,13 @@ import org.junit.Test
 
 class ChatCompletionsStreamDecoderNullTest {
     @Test
+    fun `stream usage carries cost even with empty choices`() {
+        val decoder = ChatCompletionsStreamDecoder()
+        val chunks = decoder.accept(SseEvent(data = """{"id":"r1","choices":[],"usage":{"total_cost":"0.42","currency":"CNY"}}""")).chunks
+        assertEquals("0.42", chunks.filterIsInstance<StreamChunk.Usage>().single().usage.costYuan)
+    }
+
+    @Test
     fun `explicit null fields from compatible relays do not break decoding`() {
         val decoder = ChatCompletionsStreamDecoder()
         val lines = listOf(

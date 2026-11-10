@@ -567,6 +567,7 @@ internal fun parseInteractionsUsage(usage: JsonObject?): TokenUsage? {
     if (usage == null) return null
     fun count(key: String) = usage[key]?.jsonPrimitiveOrNull?.intOrNull ?: 0
     return TokenUsage(
+        costYuan = me.rerere.ai.core.apiUsageCostYuan(usage),
         promptTokens = count("total_input_tokens"),
         // total_output_tokens 不包含思考 token
         completionTokens = count("total_output_tokens") + count("total_thought_tokens"),

@@ -32,6 +32,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -114,6 +115,7 @@ internal fun FilesPicker(
     onUpdateWorkspaceCwd: (String?) -> Unit,
     onUpdateSearchMode: (SearchMode) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
+    onUpdateShowAssistantStatus: (Boolean) -> Unit,
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -219,13 +221,30 @@ internal fun FilesPicker(
                 // 分段列表：各项按显示条件依次占位，首尾项才有大圆角
                 val showWorkspace = workspaces.isNotEmpty()
                 val showMcp = settings.mcpServers.isNotEmpty()
+                val showAssistantStatus = conversation.showAssistantStatus
                 // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
                 val showCompress = assistant.contextMessageLimit <= 0
-                val itemCount = 2 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
+                val itemCount = 3 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
                 var itemIndex = 0
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 ) {
+                    SegmentedListItem(
+                        onClick = { onUpdateShowAssistantStatus(!showAssistantStatus) },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = {
+                            Icon(HugeIcons.Settings02, contentDescription = null)
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = showAssistantStatus,
+                                onCheckedChange = onUpdateShowAssistantStatus,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.chat_page_show_assistant_status))
+                    }
+
                     SearchPickerListItem(
                         enableSearch = assistant.enableWebSearch,
                         settings = settings,

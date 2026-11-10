@@ -802,6 +802,7 @@ class ChatCompletionsAPI(
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(jsonObject),
             promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

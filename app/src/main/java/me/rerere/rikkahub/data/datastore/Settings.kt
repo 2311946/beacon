@@ -14,6 +14,9 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.GroupChat
+import me.rerere.rikkahub.data.model.GroupChatDefaults
+import me.rerere.rikkahub.data.model.AutonomousWakeupSettings
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
@@ -58,6 +61,12 @@ data class Settings(
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
+    val assistantStatuses: Map<String, me.rerere.rikkahub.data.model.AssistantStatus> = emptyMap(),
+    // 群聊列表；群聊的消息存放在它关联的 Conversation 里
+    val groupChats: List<GroupChat> = emptyList(),
+    val groupChatDefaults: GroupChatDefaults = GroupChatDefaults(),
+    // 自主唤醒：唤醒仅触发决策，不必发消息
+    val autonomousWakeup: AutonomousWakeupSettings = AutonomousWakeupSettings(),
     val assistantTags: List<Tag> = emptyList(),
     val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),
     val searchCommonOptions: SearchCommonOptions = SearchCommonOptions(),
@@ -68,6 +77,7 @@ data class Settings(
     // RemoteFileStore 上传临时素材用的桶，和备份的 s3Config 互不影响；items 字段在这里不使用
     val uploadS3Config: S3Config = S3Config(),
     val mediaGenerationProviders: List<MediaGenerationProviderSetting> = emptyList(),
+    val chatImageGeneration: me.rerere.rikkahub.data.model.ChatImageGenerationConfig = me.rerere.rikkahub.data.model.ChatImageGenerationConfig(),
     val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val defaultTTSPlaybackSpeed: Float = 1.0f,
@@ -161,6 +171,7 @@ data class DisplaySetting(
     val ttsOnlyReadOutsideBrackets: Boolean = false,
     val autoPlayTTSAfterGeneration: Boolean = false,
     val voiceModeListenWhileReplying: Boolean = true,
+    val voiceCallTtsProvider: TTSProviderSetting? = null,
     val pasteLongTextAsFile: Boolean = false,
     val pasteLongTextThreshold: Int = 1000,
     val sendOnEnter: Boolean = false,

@@ -25,6 +25,7 @@ import java.util.TimeZone
 data class PlaceholderCtx(
     val context: Context,
     val settingsStore: SettingsStore,
+    val settings: me.rerere.rikkahub.data.datastore.Settings,
     val model: Model,
     val assistant: Assistant,
 )
@@ -91,7 +92,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("nickname", { Text(stringResource(R.string.placeholder_nickname)) }) {
-            it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
+            it.settings.displaySetting.userNickname.ifBlank { "user" }
         }
 
         placeholder("char", { Text(stringResource(R.string.placeholder_char)) }) {
@@ -99,7 +100,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("user", { Text(stringResource(R.string.placeholder_user)) }) {
-            it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
+            it.settings.displaySetting.userNickname.ifBlank { "user" }
         }
     }
 
@@ -122,12 +123,18 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         val settingsStore = get<SettingsStore>()
-        return messages.map {
+        val rendered = messages.map {
             it.copy(
                 parts = it.parts.map { part ->
                     if (part is UIMessagePart.Text) {
                         part.copy(
-                            text = replacePlaceholders(text = part.text, ctx = ctx, settingsStore = settingsStore)
+                            text = replacePlaceholders(
+                                text = part.text,
+                                ctx = ctx,
+                                settingsStore = settingsStore,
+                                stableOnly = it.role == me.rerere.ai.core.MessageRole.SYSTEM,
+                                date = it.createdAt.date.toString(),
+                            )
                         )
                     } else {
                         part
@@ -135,23 +142,45 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
                 }
             )
         }
+        // 仅为实际使用的环境占位符提供值，避免无条件发送设备信息。
+        val environmentKeys = listOf("locale", "timezone", "system_version", "device_info")
+            .filter { key -> messages.any { message ->
+                message.parts.filterIsInstance<UIMessagePart.Text>().any { part ->
+                    part.text.contains("{$key}", ignoreCase = true) ||
+                        part.text.contains("{{$key}}", ignoreCase = true)
+                }
+            } }
+        val placeholderContext = PlaceholderCtx(ctx.context, settingsStore, ctx.settings, ctx.model, ctx.assistant)
+        val environment = environmentKeys.associateWith { key ->
+            defaultProvider.placeholders.getValue(key).resolver(placeholderContext)
+        }
+        return appendEnvironmentContext(rendered, environment)
     }
 
     private fun replacePlaceholders(
         text: String,
         ctx: TransformerContext,
-        settingsStore: SettingsStore
+        settingsStore: SettingsStore,
+        stableOnly: Boolean,
+        date: String,
     ): String {
         var result = text
 
         val ctx = PlaceholderCtx(
             context = ctx.context,
             settingsStore = settingsStore,
+            settings = ctx.settings,
             model = ctx.model,
             assistant = ctx.assistant
         )
         defaultProvider.placeholders.forEach { (key, placeholderInfo) ->
-            val value = placeholderInfo.resolver(ctx)
+            // 历史日期取消息时间，不能用本次请求日期重写旧消息；电量没有历史快照，不虚构。
+            val value = when (key) {
+                "cur_date" -> if (stableOnly) "[see user message date]" else date
+                "battery_level" -> "[battery level not recorded; query device tool if needed]"
+                "locale", "timezone", "system_version", "device_info" -> "[see user environment context: $key]"
+                else -> placeholderInfo.resolver(ctx)
+            }
             result = result
                 .replace(oldValue = "{{$key}}", newValue = value, ignoreCase = true)
                 .replace(oldValue = "{$key}", newValue = value, ignoreCase = true)

@@ -12,7 +12,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.Firebase
+import com.google.firebase.analytics.analytics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,10 +60,12 @@ class ChatVM(
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
-    private val analytics: FirebaseAnalytics,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
+    // 没有 google-services.json 时 Firebase 未初始化，取不到就静默跳过埋点，不能让页面打不开
+    private val analytics = runCatching { Firebase.analytics }.getOrNull()
+
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
@@ -70,8 +73,16 @@ class ChatVM(
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
 
+    @Volatile
+    private var activeVoiceCallId: String? = null
+
+    fun setActiveVoiceCall(callId: String?) {
+        activeVoiceCallId = callId
+        chatService.setActiveVoiceCall(_conversationId, callId)
+    }
+
     val voiceSession = VoiceSessionController(viewModelScope, context::getString) {
-        chatService.enqueueVoiceMessage(_conversationId, it)
+        chatService.enqueueVoiceMessage(_conversationId, it, activeVoiceCallId)
     }
 
     // 异步任务 (从ChatService获取，响应式)
@@ -134,6 +145,11 @@ class ChatVM(
     fun dismissError(id: Uuid) = chatService.dismissError(id)
 
     fun clearAllErrors() = chatService.clearAllErrors()
+
+    fun generateImageFromMessage(message: UIMessage) {
+        val prompt = message.toText().trim()
+        if (prompt.isNotBlank()) chatService.generateImageFromMessage(_conversationId, message.id, prompt)
+    }
 
     val messageQueue = chatService.getMessageQueueFlow(_conversationId)
 
@@ -204,6 +220,12 @@ class ChatVM(
         }
     }
 
+    fun setShowAssistantStatus(enabled: Boolean) {
+        viewModelScope.launch {
+            chatService.updateShowAssistantStatus(_conversationId, enabled)
+        }
+    }
+
     // Update checker
     val updateState = settingsStore.settingsFlow
         .map { settings ->
@@ -229,14 +251,14 @@ class ChatVM(
      */
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
-        analytics.logEvent("ai_send_message", null)
+        analytics?.logEvent("ai_send_message", null)
 
         chatService.sendMessage(_conversationId, content, answer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
-        analytics.logEvent("ai_edit_message", null)
+        analytics?.logEvent("ai_edit_message", null)
 
         viewModelScope.launch {
             chatService.editMessage(_conversationId, messageId, parts)
@@ -270,7 +292,7 @@ class ChatVM(
     }
 
     fun regenerateAtMessage(message: UIMessage) {
-        analytics.logEvent("ai_regenerate_at_message", null)
+        analytics?.logEvent("ai_regenerate_at_message", null)
         chatService.regenerateAtMessage(_conversationId, message.id)
     }
 
@@ -279,7 +301,7 @@ class ChatVM(
         approved: Boolean,
         reason: String = ""
     ) {
-        analytics.logEvent("ai_tool_approval", null)
+        analytics?.logEvent("ai_tool_approval", null)
         chatService.handleToolApproval(_conversationId, toolCallId, approved, reason)
     }
 
@@ -287,7 +309,7 @@ class ChatVM(
         toolCallId: String,
         answer: String,
     ) {
-        analytics.logEvent("ai_tool_answer", null)
+        analytics?.logEvent("ai_tool_answer", null)
         chatService.handleToolApproval(_conversationId, toolCallId, approved = true, answer = answer)
     }
 

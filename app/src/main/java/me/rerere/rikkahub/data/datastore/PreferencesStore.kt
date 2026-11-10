@@ -133,7 +133,15 @@ class SettingsStore internal constructor(
         // 助手
         val SELECT_ASSISTANT = stringPreferencesKey("select_assistant")
         val ASSISTANTS = stringPreferencesKey("assistants")
+        val ASSISTANT_STATUSES = stringPreferencesKey("assistant_statuses")
         val ASSISTANT_TAGS = stringPreferencesKey("assistant_tags")
+
+        // 群聊
+        val GROUP_CHATS = stringPreferencesKey("group_chats")
+        val GROUP_CHAT_DEFAULTS = stringPreferencesKey("group_chat_defaults")
+
+        // 自主唤醒：保留旧 key 对旧备份兼容，新配置独立存储
+        val AUTONOMOUS_WAKEUP = stringPreferencesKey("autonomous_wakeup")
 
         // 搜索
         val SEARCH_SERVICES = stringPreferencesKey("search_services")

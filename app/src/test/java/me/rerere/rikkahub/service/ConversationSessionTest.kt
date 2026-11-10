@@ -31,6 +31,46 @@ import kotlin.uuid.Uuid
 
 class ConversationSessionTest {
     @Test
+    fun `leaving and reopening a streaming chat keeps the registered request alive`() = runTest {
+        val id = Uuid.random()
+        val store = FakeConversationStore(Conversation.ofId(id))
+        var evicted = false
+        val session = ConversationSession(id, Conversation.ofId(id), backgroundScope, store, { evicted = true })
+        session.initialize(load = { store.persisted })
+        session.acquire()
+        val finish = CompletableDeferred<Unit>()
+        val firstChunk = UIMessage.assistant("部分文字")
+        val request = backgroundScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                session.update { it.updateCurrentMessages(listOf(firstChunk)) }
+                finish.await()
+                session.update { it.updateCurrentMessages(listOf(firstChunk.copy(parts = listOf(UIMessagePart.Text("部分文字，继续完成"))))) }
+            } finally {
+                session.finishGeneration()
+            }
+        }
+        session.setJob(request)
+        runCurrent()
+        session.release()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertTrue(request.isActive)
+        assertTrue(session.isInUse)
+        assertFalse(evicted)
+        assertEquals("部分文字", session.state.value.currentMessages.single().toText())
+        session.acquire()
+        session.initialize(load = { error("Returning must observe the live session, not reload old history") })
+        assertSame(request, session.getJob())
+        finish.complete(Unit)
+        runCurrent()
+        assertTrue(request.isCompleted)
+        assertEquals("部分文字，继续完成", store.persisted!!.currentMessages.single().toText())
+        assertNull(session.getJob())
+        session.release()
+        session.cleanup()
+    }
+
+    @Test
     fun `metadata edits survive reopening and final generation save`() = runBlocking {
         val id = Uuid.random()
         val oldAssistant = Uuid.random()

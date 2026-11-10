@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import me.rerere.tts.model.PlaybackState
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
@@ -62,6 +63,32 @@ fun rememberCustomTtsState(): CustomTtsState {
         onDispose {
             ttsState.cleanup()
         }
+    }
+
+    return ttsState
+}
+
+@Composable
+fun rememberVoiceCallTtsState(settings: Settings): CustomTtsState {
+    val context = LocalContext.current
+    val settingsStore = koinInject<SettingsStore>()
+    val ttsState = remember {
+        CustomTtsStateImpl(
+            context = context.applicationContext,
+            settingsStore = settingsStore,
+            forVoiceCall = true,
+        )
+    }
+    val provider = settings.displaySetting.voiceCallTtsProvider ?: settings.getSelectedTTSProvider()
+
+    DisposableEffect(provider, settings.defaultTTSPlaybackSpeed) {
+        ttsState.updateProvider(provider)
+        ttsState.setSpeed(settings.defaultTTSPlaybackSpeed)
+        onDispose { }
+    }
+
+    DisposableEffect(ttsState) {
+        onDispose { ttsState.cleanup() }
     }
 
     return ttsState
@@ -122,11 +149,12 @@ interface CustomTtsState {
  */
 private class CustomTtsStateImpl(
     private val context: Context,
-    private val settingsStore: SettingsStore
+    private val settingsStore: SettingsStore,
+    private val forVoiceCall: Boolean = false,
 ) : CustomTtsState, KoinComponent {
 
     private val ttsManager by inject<TTSManager>()
-    private val controller by lazy { me.rerere.tts.controller.TtsController(context, ttsManager) }
+    private val controller by lazy { TtsController(context, ttsManager, forVoiceCall) }
 
     private val scope = CoroutineScope(Dispatchers.Main)
     private var currentJob: Job? = null

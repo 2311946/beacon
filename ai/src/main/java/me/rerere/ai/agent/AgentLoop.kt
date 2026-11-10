@@ -14,6 +14,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
+import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.ai.util.json
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -37,7 +38,7 @@ internal class AgentLoop(
 
     init {
         val last = request.messages.lastOrNull()
-        if (last?.role == MessageRole.ASSISTANT) {
+        if (request.continueLastAssistantMessage && last?.role == MessageRole.ASSISTANT) {
             history = request.messages.dropLast(1)
             message = last
         } else {
@@ -90,12 +91,44 @@ internal class AgentLoop(
             parts = emptyList(),
             modelId = params.model.id,
         )
-        val generated = if (request.stream) {
-            stream(step.messages, params, base)
-        } else {
-            generate(step.messages, params, base)
+        var attemptBase = base
+        // 首次请求之外最多追加三次空回复重试；只重放本步，不重跑已经执行的工具。
+        repeat(4) { attempt ->
+            val generated = if (request.stream) {
+                stream(step.messages, params, attemptBase)
+            } else {
+                generate(step.messages, params, attemptBase)
+            }
+            val finished = hooks.finishStep(generated, newPartsFrom = base.parts.size)
+            val newParts = finished.parts.drop(base.parts.size)
+            // 工具调用和有效媒体不是空回复；仅推理而没有正文也需要重试。
+            val visibleParts = newParts.filterNot { it is UIMessagePart.Reasoning }
+            if (!visibleParts.isEmptyUIMessage()) {
+                update(finished.copy(finishedAt = now()))
+                return
+            }
+            attemptBase = base.copy(
+                usage = generated.usage,
+                generationTimeMs = generated.generationTimeMs,
+                lastUsage = generated.lastUsage,
+                stepCount = generated.stepCount,
+            )
+            if (attempt < 3) {
+                update(attemptBase)
+                events.emit(AgentEvent.Retrying(RetryAttempt(
+                    IllegalStateException("回复为空"), attempt + 1, 3, Duration.ZERO,
+                )))
+            } else {
+                update(attemptBase.copy(
+                    parts = base.parts + UIMessagePart.Text(
+                        "回复为空，请重试",
+                        buildJsonObject { put("beacon_event", "empty_reply") },
+                    ),
+                    finishedAt = now(),
+                ))
+                return
+            }
         }
-        update(hooks.finishStep(generated, newPartsFrom = base.parts.size).copy(finishedAt = now()))
     }
 
     private suspend fun stream(

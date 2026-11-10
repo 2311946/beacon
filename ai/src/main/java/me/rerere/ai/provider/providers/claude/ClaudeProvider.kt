@@ -561,58 +561,6 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     addUserMessage(message)
                 }
             }
-    }.let { messagesArray ->
-        if (!promptCaching) return@let messagesArray
-        insertMessagesCacheControl(messagesArray, promptCacheTtl)
-    }
-
-    /**
-     * 在倒数第二条非 tool_result 的 user message 的最后一个 content block 上插入 cache_control
-     */
-    private fun insertMessagesCacheControl(
-        messages: JsonArray,
-        promptCacheTtl: ClaudePromptCacheTtl
-    ): JsonArray {
-        // 找出所有非 tool_result 的 user message 的索引
-        val realUserIndices = messages.mapIndexedNotNull { index, msg ->
-            val obj = msg.jsonObject
-            if (obj["role"]?.jsonPrimitive?.contentOrNull == "user") {
-                val content = obj["content"]?.jsonArray
-                val isToolResult = content?.any {
-                    it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_result"
-                } == true
-                if (!isToolResult) index else null
-            } else {
-                null
-            }
-        }
-
-        // 取倒数第二条
-        val targetIndex = if (realUserIndices.size >= 2) {
-            realUserIndices[realUserIndices.size - 2]
-        } else {
-            return messages
-        }
-
-        // 在目标 message 的最后一个 content block 上添加 cache_control
-        return JsonArray(messages.mapIndexed { index, msg ->
-            if (index == targetIndex) {
-                val obj = msg.jsonObject
-                val content = obj["content"]?.jsonArray ?: return@mapIndexed msg
-                val newContent = JsonArray(content.mapIndexed { contentIndex, block ->
-                    if (contentIndex == content.lastIndex) {
-                        JsonObject(
-                            block.jsonObject + mapOf("cache_control" to cacheControlEphemeral(promptCacheTtl))
-                        )
-                    } else {
-                        block
-                    }
-                })
-                JsonObject(obj + mapOf("content" to newContent))
-            } else {
-                msg
-            }
-        })
     }
 
     private fun JsonArrayBuilder.addAssistantMessage(message: UIMessage) {
@@ -913,6 +861,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(usageJson),
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = promptTokens + completionTokens,

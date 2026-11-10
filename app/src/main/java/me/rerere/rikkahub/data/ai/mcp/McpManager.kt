@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.oauth.CustomTabsOAuthAuthorizationLauncher
 import me.rerere.oauth.OAuthHttpClient
@@ -32,6 +33,14 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import kotlin.io.encoding.Base64
 import kotlin.uuid.Uuid
+
+internal fun markMcpToolError(output: List<UIMessagePart>, isError: Boolean): List<UIMessagePart> {
+    if (!isError) return output
+    return output + UIMessagePart.Text(
+        "Failed to execute MCP tool: server returned an error",
+        JsonObject(mapOf("mcp_error" to JsonPrimitive(true))),
+    )
+}
 
 /**
  * MCP 子系统的公共入口。
@@ -120,15 +129,19 @@ class McpManager(
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpClientUnavailableException) {
-            return listOf(UIMessagePart.Text("Failed to execute MCP tool: ${e.message ?: e.javaClass.name}"))
+            return markMcpToolError(
+                listOf(UIMessagePart.Text("Failed to execute MCP tool: ${e.message ?: e.javaClass.name}")),
+                isError = true,
+            )
         }
-        return result.content.map { content ->
+        val output = result.content.map { content ->
             when (content) {
                 is TextContent -> UIMessagePart.Text(content.text)
                 is ImageContent -> convertImageContentToFilePart(content)
                 else -> UIMessagePart.Text(JsonInstant.encodeToString(content))
             }
         }
+        return markMcpToolError(output, result.isError == true)
     }
 
     suspend fun addClient(config: McpServerConfig) = sessionRegistry.addClient(config)

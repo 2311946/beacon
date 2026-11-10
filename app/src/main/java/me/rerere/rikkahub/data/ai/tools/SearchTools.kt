@@ -31,7 +31,7 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                     If a date or primary source is missing, or sources conflict, run another focused search
                     or use scrape_web to verify the most relevant source before answering.
                     Generate focused keywords and run multiple searches if needed.
-                    Today is ${LocalDate.now().toLocalString(true)}.
+                    Use the date supplied in the user context; do not assume a fixed current date.
 
                     Response format:
                     - retrievedAt is the local retrieval time, never a publication date

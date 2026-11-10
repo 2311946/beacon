@@ -61,16 +61,7 @@ class WorkspaceReminderTransformer(
 
     // 追加到第一条 system 消息; 若不存在则插入一条
     private fun List<UIMessage>.withPrompt(prompt: String): List<UIMessage> {
-        val systemIndex = indexOfFirst { it.role == MessageRole.SYSTEM }
-        return if (systemIndex >= 0) {
-            toMutableList().apply {
-                this[systemIndex] = this[systemIndex]
-                    .appendText("\n\n$prompt")
-                    .copy(isSynthetic = true)
-            }
-        } else {
-            listOf(UIMessage.system(prompt).copy(isSynthetic = true)) + this
-        }
+        return appendUserContext(this, prompt)
     }
 
     private suspend fun buildAgentsPrompt(workspaceId: String, cwd: String?): String {

@@ -26,6 +26,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.UsageBudgetStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
@@ -130,7 +131,11 @@ val dataSourceModule = module {
     }
 
     single {
-        UsageRecorder(dao = get(), scope = get<AppScope>())
+        UsageBudgetStore(context = get(), scope = get<AppScope>())
+    }
+
+    single {
+        UsageRecorder(dao = get(), budgetStore = get(), scope = get<AppScope>())
     }
 
     single {

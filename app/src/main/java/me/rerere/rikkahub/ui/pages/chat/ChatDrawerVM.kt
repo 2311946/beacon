@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.AssistantStatusManager
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -46,7 +47,23 @@ class ChatDrawerVM(
     private val chatService: ChatService,
     private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val savedStateHandle: SavedStateHandle,
+    private val assistantStatusManager: AssistantStatusManager,
 ) : ViewModel() {
+
+    fun refreshAssistantStatuses() {
+        viewModelScope.launch {
+            assistantStatusManager.refreshAllStatuses()
+        }
+    }
+
+    fun setManualAssistantStatus(assistantId: Uuid, text: String?) {
+        viewModelScope.launch {
+            assistantStatusManager.setManualStatus(assistantId, text)
+            if (text.isNullOrBlank()) {
+                assistantStatusManager.refreshAllStatuses()
+            }
+        }
+    }
 
     private val assistantIdFlow = settingsStore.settingsFlow
         .map { it.assistantId }

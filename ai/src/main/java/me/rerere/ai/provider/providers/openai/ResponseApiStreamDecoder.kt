@@ -253,6 +253,7 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
     private fun parseUsage(usage: JsonObject?): TokenUsage? {
         if (usage == null) return null
         return TokenUsage(
+            costYuan = me.rerere.ai.core.apiUsageCostYuan(usage),
             promptTokens = usage["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = usage["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = usage["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

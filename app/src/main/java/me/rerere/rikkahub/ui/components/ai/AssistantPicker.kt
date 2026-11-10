@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,10 +64,19 @@ fun AssistantPicker(
     onSelectAssistant: (Assistant) -> Unit,
     modifier: Modifier = Modifier,
     onClickSetting: () -> Unit,
+    onEditStatus: (Assistant) -> Unit,
+    onRefreshStatuses: () -> Unit,
 ) {
     val state = rememberAssistantState(settings, onSelectAssistant)
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
     var showPicker by remember { mutableStateOf(false) }
+    val currentStatus = settings.assistantStatuses[state.currentAssistant.id.toString()]?.displayText.orEmpty()
+
+    LaunchedEffect(showPicker, settings.init) {
+        if (showPicker && !settings.init) {
+            onRefreshStatuses()
+        }
+    }
 
     NavigationDrawerItem(
         icon = {
@@ -71,13 +86,22 @@ fun AssistantPicker(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = state.currentAssistant.name.ifEmpty { defaultAssistantName },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(Modifier.weight(1f))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.currentAssistant.name.ifEmpty { defaultAssistantName },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (currentStatus.isNotBlank()) {
+                        Text(
+                            text = currentStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
 
                 UIAvatar(
                     name = state.currentAssistant.name.ifEmpty { defaultAssistantName },
@@ -97,6 +121,10 @@ fun AssistantPicker(
         AssistantPickerSheet(
             settings = settings,
             currentAssistant = state.currentAssistant,
+            onEditStatus = { assistant ->
+                showPicker = false
+                onEditStatus(assistant)
+            },
             onAssistantSelected = { assistant ->
                 showPicker = false
                 state.setSelectAssistant(assistant)
@@ -113,6 +141,7 @@ private fun AssistantPickerSheet(
     settings: Settings,
     currentAssistant: Assistant,
     onAssistantSelected: (Assistant) -> Unit,
+    onEditStatus: (Assistant) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
@@ -182,26 +211,51 @@ private fun AssistantPickerSheet(
             ) {
                 items(filteredAssistants, key = { it.id }) { assistant ->
                     val checked = assistant.id == currentAssistant.id
-                    Card(
-                        onClick = { onAssistantSelected(assistant) },
-                        modifier = Modifier.animateItem(),
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            contentColor = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        ),
-                    ) {
-                        AssistantItem(
-                            assistant = assistant,
-                            defaultAssistantName = defaultAssistantName,
-                            onEdit = {
-                                scope.launch {
-                                    sheetState.hide()
-                                    onDismiss()
-                                    navController.navigate(Screen.AssistantDetail(assistant.id.toString()))
+                    var showStatusMenu by remember(assistant.id) { mutableStateOf(false) }
+                    Box(modifier = Modifier.animateItem()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.large)
+                                .combinedClickable(
+                                    onClick = { onAssistantSelected(assistant) },
+                                    onLongClickLabel = stringResource(R.string.chat_page_set_assistant_status),
+                                    onLongClick = { showStatusMenu = true },
+                                ),
+                            shape = MaterialTheme.shapes.large,
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                                contentColor = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) {
+                            AssistantItem(
+                                assistant = assistant,
+                                status = settings.assistantStatuses[assistant.id.toString()]?.displayText.orEmpty(),
+                                defaultAssistantName = defaultAssistantName,
+                                onEdit = {
+                                    scope.launch {
+                                        sheetState.hide()
+                                        onDismiss()
+                                        navController.navigate(Screen.AssistantDetail(assistant.id.toString()))
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showStatusMenu,
+                            onDismissRequest = { showStatusMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_page_set_assistant_status)) },
+                                onClick = {
+                                    showStatusMenu = false
+                                    scope.launch {
+                                        sheetState.hide()
+                                        onEditStatus(assistant)
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -212,6 +266,7 @@ private fun AssistantPickerSheet(
 @Composable
 private fun AssistantItem(
     assistant: Assistant,
+    status: String,
     defaultAssistantName: String,
     onEdit: () -> Unit
 ) {
@@ -223,6 +278,17 @@ private fun AssistantItem(
                 overflow = TextOverflow.Ellipsis
             )
         },
+        supportingContent = if (status.isNotBlank()) {
+            {
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else null,
         leadingContent = {
             UIAvatar(
                 name = assistant.name.ifEmpty { defaultAssistantName },

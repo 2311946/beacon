@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.data.model
 
+import kotlinx.serialization.encodeToString
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -47,6 +49,54 @@ class ConversationConfigTest {
         assistantId = assistant.id,
         messageNodes = emptyList(),
     )
+
+    @Test
+    fun `status visibility defaults to enabled for new and old configs`() {
+        assertTrue(conversation().showAssistantStatus)
+        assertTrue(ConversationConfig().showAssistantStatus)
+        assertTrue(JsonInstant.decodeFromString<ConversationConfig>("{}").showAssistantStatus)
+    }
+
+    @Test
+    fun `disabled status visibility survives serialization`() {
+        val config = ConversationConfig(chatModelId = modelA.id, showAssistantStatus = false)
+        val restored = JsonInstant.decodeFromString<ConversationConfig>(JsonInstant.encodeToString(config))
+        assertEquals(config, restored)
+        assertFalse(restored.showAssistantStatus)
+    }
+
+    @Test
+    fun `draft visibility does not bind model configuration early`() {
+        val draft = conversation().withAssistantStatusVisibility(false)
+        assertNull(draft.config)
+        assertFalse(draft.showAssistantStatus)
+        val changed = settings(assistant.copy(chatModelId = modelB.id))
+        assertEquals(modelB.id, changed.getChatModelOf(draft)?.id)
+        val bound = draft.bindConfig(changed)
+        assertFalse(bound.showAssistantStatus)
+        assertEquals(modelB.id, bound.config?.chatModelId)
+    }
+
+    @Test
+    fun `visibility is isolated to the selected conversation`() {
+        val first = conversation().bindConfig(settings())
+        val second = conversation().bindConfig(settings())
+        val hidden = first.withAssistantStatusVisibility(false)
+        assertFalse(hidden.showAssistantStatus)
+        assertTrue(first.showAssistantStatus)
+        assertTrue(second.showAssistantStatus)
+        assertEquals(first.config?.copy(showAssistantStatus = false), hidden.config)
+        assertEquals(first.messageNodes, hidden.messageNodes)
+    }
+
+    @Test
+    fun `assistant updates and model switches preserve hidden status`() {
+        val hidden = conversation().bindConfig(settings()).withAssistantStatusVisibility(false)
+        val updated = settings().getAssistantOf(hidden).copy(chatModelId = modelB.id)
+        val switched = hidden.withAssistantUpdate(updated, settings())
+        assertFalse(switched.showAssistantStatus)
+        assertTrue(switched.withAssistantStatusVisibility(true).showAssistantStatus)
+    }
 
     @Test
     fun `unstarted conversation follows the assistant`() {
