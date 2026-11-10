@@ -47,6 +47,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import me.rerere.rikkahub.ui.theme.LocalChatTheme
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,15 +145,17 @@ fun MarkdownBlock(
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
     streaming: Boolean = false,
-    onClickCitation: (String) -> Unit = {}
+    novelStyle: Boolean = false,
+    onClickCitation: (String) -> Unit = {},
 ) {
     val enableLatexRendering = LocalSettings.current.displaySetting.enableLatexRendering
     val enableQuoteHighlight = LocalSettings.current.displaySetting.enableQuoteHighlight
+    val novelStyles = if (novelStyle) rememberNovelTextStyles() else null
     val fontSize = LocalTextStyle.current.merge(style).fontSize
     val density = LocalDensity.current
     val quoteColor = MaterialTheme.colorScheme.tertiary
     val defaultTheme = MaterialMarkdownDefaults.theme(style)
-    val theme = remember(defaultTheme, fontSize, density, enableQuoteHighlight, quoteColor) {
+    val theme = remember(defaultTheme, fontSize, density, enableQuoteHighlight, quoteColor, novelStyle) {
         defaultTheme.copy(
             inlineCode = defaultTheme.inlineCode.copy(
                 fontFamily = JetbrainsMono,
@@ -158,7 +163,7 @@ fun MarkdownBlock(
             ),
             // 段落间距跟随字号，调整字体大小时保持比例
             blockSpacing = if (fontSize.isSp) with(density) { fontSize.toDp() } else defaultTheme.blockSpacing,
-            quotedText = SpanStyle(color = quoteColor).takeIf { enableQuoteHighlight },
+            quotedText = SpanStyle(color = quoteColor).takeIf { enableQuoteHighlight && !novelStyle },
         )
     }
 
@@ -227,7 +232,34 @@ fun MarkdownBlock(
         theme = theme,
         components = components,
         streaming = streaming,
+        novelStyles = novelStyles,
     )
+}
+
+@Composable
+private fun rememberNovelTextStyles(): NovelTextStyles {
+    val theme = LocalChatTheme.current
+    val dark = LocalDarkMode.current
+    // 经典浅色采用黑/深灰；深色反转亮度，避免黑字落在暗色气泡上。
+    return remember(theme, dark) {
+        NovelTextStyles(
+            dialogue = SpanStyle(
+                color = theme.novelDialogueColor ?: if (dark) Color(0xFFF5F5F5) else Color.Black,
+                fontWeight = FontWeight.Bold,
+            ),
+            action = SpanStyle(
+                color = theme.novelActionColor ?: if (dark) Color(0xFFB0B0B8) else Color(0xFF66666E),
+                fontStyle = FontStyle.Italic,
+            ),
+            narration = SpanStyle(
+                color = theme.novelNarrationColor ?: if (dark) Color(0xFFD0D0D6) else Color(0xFF44444C),
+            ),
+            thought = SpanStyle(
+                color = theme.novelThoughtColor ?: if (dark) Color(0xFF93939E) else Color(0xFF85858E),
+                fontStyle = FontStyle.Italic,
+            ),
+        )
+    }
 }
 
 /**

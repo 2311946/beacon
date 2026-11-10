@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -43,10 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import me.rerere.bettertext.markdown.MarkdownBlock
 import me.rerere.bettertext.markdown.MarkdownComponents
+import me.rerere.bettertext.markdown.MarkdownDocument
 import me.rerere.bettertext.markdown.MarkdownInline
 import me.rerere.bettertext.markdown.MarkdownInlineContent
 import me.rerere.bettertext.markdown.MarkdownTheme
 import me.rerere.bettertext.markdown.TableCell
+import me.rerere.bettertext.markdown.rememberMarkdownDocument
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Image02
@@ -64,6 +67,7 @@ import me.rerere.bettertext.markdown.Markdown as BetterMarkdown
  * @param style 正文样式，合并到 `LocalTextStyle` 上；没有颜色时用 `LocalContentColor`
  * @param streaming 内容还在生成时为 true，末尾没写完的语法（如 `**加粗`、`$\frac{`）会被补全或隐藏
  * @param onLinkClick 链接点击回调，为 null 时交给系统的 UriHandler 打开
+ * @param novelStyles 小说显示样式；为 null 时沿用原渲染路径，启用时调用方应关闭主题的 quotedText
  */
 @Composable
 fun MaterialMarkdown(
@@ -74,23 +78,189 @@ fun MaterialMarkdown(
     components: MarkdownComponents = MaterialMarkdownDefaults.components,
     softBreakAsLineBreak: Boolean = true,
     streaming: Boolean = false,
+    novelStyles: NovelTextStyles? = null,
     onLinkClick: ((url: String) -> Unit)? = null,
 ) {
     val merged = LocalTextStyle.current.merge(style)
     val resolved = merged.copy(color = merged.color.takeOrElse { LocalContentColor.current })
     // 插槽里的组件（代码块、表格工具栏等）用 Material 的 Text，让它们也拿到正文样式
     ProvideTextStyle(resolved) {
-        BetterMarkdown(
-            content = content,
-            modifier = modifier,
-            style = resolved,
-            theme = theme,
-            components = components,
-            softBreakAsLineBreak = softBreakAsLineBreak,
-            streaming = streaming,
-            onLinkClick = onLinkClick,
-        )
+        if (novelStyles == null) {
+            BetterMarkdown(
+                content = content,
+                modifier = modifier,
+                style = resolved,
+                theme = theme,
+                components = components,
+                softBreakAsLineBreak = softBreakAsLineBreak,
+                streaming = streaming,
+                onLinkClick = onLinkClick,
+            )
+        } else {
+            val document = rememberMarkdownDocument(content, softBreakAsLineBreak, streaming)
+            val styledDocument = remember(document, novelStyles) {
+                applyNovelTextStyles(document, novelStyles)
+            }
+            BetterMarkdown(
+                document = styledDocument,
+                modifier = modifier,
+                style = resolved,
+                theme = theme,
+                components = components,
+                onLinkClick = onLinkClick,
+            )
+        }
     }
+}
+
+data class NovelTextStyles(
+    val dialogue: SpanStyle,
+    val action: SpanStyle,
+    val thought: SpanStyle,
+    val narration: SpanStyle,
+)
+
+/** 只改变显示 AST；文档、表格源码以及代码、链接、图片、公式节点保持原样。 */
+internal fun applyNovelTextStyles(document: MarkdownDocument, styles: NovelTextStyles): MarkdownDocument {
+    fun mapBlock(block: MarkdownBlock): MarkdownBlock = when (block) {
+        is MarkdownBlock.Paragraph -> block.copy(content = styleNovelInlines(block.content, styles))
+        is MarkdownBlock.Heading -> block.copy(content = styleNovelInlines(block.content, styles))
+        is MarkdownBlock.Quote -> block.copy(children = block.children.map { mapBlock(it) })
+        is MarkdownBlock.ListBlock -> block.copy(
+            items = block.items.map { item -> item.copy(children = item.children.map { mapBlock(it) }) },
+        )
+        is MarkdownBlock.Container -> block.copy(children = block.children.map { mapBlock(it) })
+        is MarkdownBlock.Details -> block.copy(
+            summary = styleNovelInlines(block.summary, styles),
+            children = block.children.map { mapBlock(it) },
+        )
+        is MarkdownBlock.Table -> block.copy(
+            header = block.header.map { it.copy(content = styleNovelInlines(it.content, styles)) },
+            rows = block.rows.map { row ->
+                row.map { it.copy(content = styleNovelInlines(it.content, styles)) }
+            },
+        )
+        is MarkdownBlock.CodeBlock, MarkdownBlock.Divider -> block
+    }
+    return document.copy(blocks = document.blocks.map { mapBlock(it) })
+}
+
+private const val NOVEL_DIALOGUE = 1
+private const val NOVEL_THOUGHT = 2
+private const val NOVEL_BARRIER = '\u0000'
+
+private data class NovelDelimiter(val closing: Char, val start: Int, val thought: Boolean)
+
+/** 完整配对才分配样式；可跨 Styled，但不能跨受保护节点、段落或表格单元格。 */
+private fun novelTextKinds(text: String): IntArray {
+    val dialogueChanges = IntArray(text.length + 1)
+    val thoughtChanges = IntArray(text.length + 1)
+    val stack = mutableListOf<NovelDelimiter>()
+    fun isEnglishWord(char: Char?): Boolean = char != null && char.code < 128 && char.isLetterOrDigit()
+    text.forEachIndexed { index, char ->
+        if (char == NOVEL_BARRIER) {
+            stack.clear()
+            return@forEachIndexed
+        }
+        // 英文单词内部的直/弯撇号不是引号；词尾的单引号只允许关闭已有配对。
+        val singleQuote = char == '\'' || char == '‘' || char == '’'
+        val previousIsWord = isEnglishWord(text.getOrNull(index - 1))
+        val nextIsWord = isEnglishWord(text.getOrNull(index + 1))
+        if (singleQuote && previousIsWord && nextIsWord) return@forEachIndexed
+        val closingIndex = stack.indexOfLast { it.closing == char }
+        if (closingIndex >= 0) {
+            val opening = stack[closingIndex]
+            // 内层未闭合不应阻断已闭合的外层；丢弃内层待配对，保留原文字。
+            while (stack.size > closingIndex) stack.removeAt(stack.lastIndex)
+            val changes = if (opening.thought) thoughtChanges else dialogueChanges
+            changes[opening.start]++
+            changes[index + 1]--
+        } else {
+            if (singleQuote && previousIsWord) return@forEachIndexed
+            val closing = when (char) {
+                '「' -> '」'
+                '『' -> '』'
+                '“' -> '”'
+                '‘' -> '’'
+                '"', '\'' -> char
+                '（' -> '）'
+                '(' -> ')'
+                else -> null
+            }
+            if (closing != null) {
+                stack.add(NovelDelimiter(closing, index, char == '（' || char == '('))
+            }
+        }
+    }
+    var dialogueDepth = 0
+    var thoughtDepth = 0
+    return IntArray(text.length) { index ->
+        dialogueDepth += dialogueChanges[index]
+        thoughtDepth += thoughtChanges[index]
+        (if (dialogueDepth > 0) NOVEL_DIALOGUE else 0) or
+            (if (thoughtDepth > 0) NOVEL_THOUGHT else 0)
+    }
+}
+
+private fun styleNovelInlines(content: List<MarkdownInline>, styles: NovelTextStyles): List<MarkdownInline> {
+    val text = StringBuilder()
+    fun collect(nodes: List<MarkdownInline>) {
+        nodes.forEach { node ->
+            when (node) {
+                is MarkdownInline.Text -> text.append(node.text)
+                is MarkdownInline.Styled -> collect(node.children)
+                else -> text.append(NOVEL_BARRIER)
+            }
+        }
+    }
+    collect(content)
+    val kinds = novelTextKinds(text.toString())
+    var offset = 0
+    fun mapInlines(
+        nodes: List<MarkdownInline>,
+        originalStyle: SpanStyle,
+        action: Boolean,
+    ): List<MarkdownInline> = nodes.flatMap { node ->
+        when (node) {
+            is MarkdownInline.Text -> {
+                val start = offset
+                offset += node.text.length
+                buildList<MarkdownInline> {
+                    var localStart = 0
+                    while (localStart < node.text.length) {
+                        val kind = kinds[start + localStart]
+                        var localEnd = localStart + 1
+                        while (localEnd < node.text.length && kinds[start + localEnd] == kind) localEnd++
+                        var span = styles.narration
+                        if (action) span = span.merge(styles.action)
+                        if (kind and NOVEL_DIALOGUE != 0) span = span.merge(styles.dialogue)
+                        if (kind and NOVEL_THOUGHT != 0) span = span.merge(styles.thought)
+                        // 原有强调和显式样式优先，小说样式不抹去 Markdown 的加粗、斜体等属性。
+                        add(
+                            MarkdownInline.Styled(
+                                style = span.merge(originalStyle),
+                                children = listOf(MarkdownInline.Text(node.text.substring(localStart, localEnd))),
+                            ),
+                        )
+                        localStart = localEnd
+                    }
+                    if (node.text.isEmpty()) add(node)
+                }
+            }
+            is MarkdownInline.Styled -> listOf(node.copy(
+                children = mapInlines(
+                    node.children,
+                    originalStyle.merge(node.style),
+                    node.style.fontStyle?.let { it == FontStyle.Italic } ?: action,
+                ),
+            ))
+            else -> {
+                offset++
+                listOf(node)
+            }
+        }
+    }
+    return mapInlines(content, SpanStyle(), action = false)
 }
 
 object MaterialMarkdownDefaults {

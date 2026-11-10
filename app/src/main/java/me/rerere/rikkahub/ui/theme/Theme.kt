@@ -64,6 +64,10 @@ data class ChatThemeAppearance(
     val secondaryTextColor: Color? = null,
     val accentColor: Color? = null,
     val forceAssistantBubble: Boolean = false,
+    val novelDialogueColor: Color? = null,
+    val novelActionColor: Color? = null,
+    val novelNarrationColor: Color? = null,
+    val novelThoughtColor: Color? = null,
 )
 
 private val KuromiColorScheme = darkColorScheme(
@@ -98,6 +102,8 @@ private val KuromiAppearance = ChatThemeAppearance(
     inputColor = Color(0xFF1E1E2E),
     textColor = Color.White, secondaryTextColor = Color(0xFFFFB6C1),
     accentColor = Color(0xFFB388FF), forceAssistantBubble = true,
+    novelDialogueColor = Color(0xFFB388FF), novelActionColor = Color(0xFFC9B5E8),
+    novelNarrationColor = Color(0xFFD2CEDB), novelThoughtColor = Color(0xFF9D8CAF),
 )
 
 fun BuiltInChatTheme.appearance(): ChatThemeAppearance = when (this) {

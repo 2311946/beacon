@@ -1,9 +1,113 @@
 package me.rerere.rikkahub.utils
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import me.rerere.bettertext.markdown.MarkdownBlock
+import me.rerere.bettertext.markdown.MarkdownDocument
+import me.rerere.bettertext.markdown.MarkdownInline
+import me.rerere.bettertext.markdown.parseMarkdown
+import me.rerere.rikkahub.ui.components.richtext.NovelTextStyles
+import me.rerere.rikkahub.ui.components.richtext.applyNovelTextStyles
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MarkdownUtilsTest {
+
+    private val novelStyles = NovelTextStyles(
+        dialogue = SpanStyle(color = Color.Magenta, fontWeight = FontWeight.Bold),
+        action = SpanStyle(color = Color.Gray, fontStyle = FontStyle.Italic),
+        thought = SpanStyle(color = Color.LightGray, fontStyle = FontStyle.Italic),
+        narration = SpanStyle(color = Color.DarkGray),
+    )
+
+    private fun styledInlines(vararg inlines: MarkdownInline): List<MarkdownInline> {
+        val document = MarkdownDocument("original source", listOf(MarkdownBlock.Paragraph(inlines.toList())))
+        val rendered = applyNovelTextStyles(document, novelStyles)
+        assertEquals(document.source, rendered.source)
+        return (rendered.blocks.single() as MarkdownBlock.Paragraph).content
+    }
+
+    private fun runs(nodes: List<MarkdownInline>, inherited: SpanStyle = SpanStyle()): List<Pair<String, SpanStyle>> =
+        nodes.flatMap { node ->
+            when (node) {
+                is MarkdownInline.Text -> listOf(node.text to inherited)
+                is MarkdownInline.Styled -> runs(node.children, inherited.merge(node.style))
+                else -> emptyList()
+            }
+        }
+
+    @Test
+    fun `novel quotes thoughts and narration preserve text and style`() {
+        val text = "旁白「你好」\"早安\" '晚安' （心事）后文"
+        val rendered = runs(styledInlines(MarkdownInline.Text(text)))
+        assertEquals(text, rendered.joinToString("") { it.first })
+        assertTrue(rendered.any { it.first == "「你好」\"早安\"" && it.second.fontWeight == FontWeight.Bold })
+        assertTrue(rendered.any { it.first == "'晚安'" && it.second.color == Color.Magenta })
+        assertTrue(rendered.any { it.first == "（心事）" && it.second.fontStyle == FontStyle.Italic && it.second.color == Color.LightGray })
+        assertEquals(Color.DarkGray, rendered.first().second.color)
+    }
+
+    @Test
+    fun `novel dialogue pairs across styled nodes and italic is action`() {
+        val rendered = runs(styledInlines(
+            MarkdownInline.Text("「你"),
+            MarkdownInline.Styled(SpanStyle(fontWeight = FontWeight.Bold), listOf(MarkdownInline.Text("好"))),
+            MarkdownInline.Text("」"),
+            MarkdownInline.Styled(SpanStyle(fontStyle = FontStyle.Italic), listOf(MarkdownInline.Text("轻轻点头"))),
+        ))
+        assertEquals("「你好」轻轻点头", rendered.joinToString("") { it.first })
+        assertTrue(rendered.take(3).all { it.second.color == Color.Magenta && it.second.fontWeight == FontWeight.Bold })
+        assertEquals(Color.Gray, rendered.last().second.color)
+        assertEquals(FontStyle.Italic, rendered.last().second.fontStyle)
+    }
+
+    @Test
+    fun `novel contractions unmatched delimiters and protected code remain safe`() {
+        val plain = "don't it's 未闭合「内容"
+        val rendered = runs(styledInlines(MarkdownInline.Text(plain)))
+        assertEquals(plain, rendered.joinToString("") { it.first })
+        assertTrue(rendered.all { it.second.color == Color.DarkGray })
+        val code = MarkdownInline.Code("\"quoted code\"")
+        val protected = styledInlines(MarkdownInline.Text("「前"), code, MarkdownInline.Text("后」"))
+        assertSame(code, protected[1])
+        assertTrue(runs(protected).all { it.second.color == Color.DarkGray })
+    }
+
+    @Test
+    fun `novel nested thoughts take precedence over dialogue`() {
+        val text = "「你好（我（有点）紧张）」"
+        val rendered = runs(styledInlines(MarkdownInline.Text(text)))
+        assertEquals(text, rendered.joinToString("") { it.first })
+        val thought = rendered.filter { it.first.contains("紧张") }
+        assertTrue(thought.isNotEmpty())
+        assertTrue(thought.all { it.second.color == Color.LightGray })
+    }
+
+    @Test
+    fun `novel closed outer quote survives unclosed inner thought`() {
+        val rendered = runs(styledInlines(MarkdownInline.Text("「你好（补充说明」")))
+        assertEquals("「你好（补充说明」", rendered.joinToString("") { it.first })
+        assertTrue(rendered.all { it.second.color == Color.Magenta })
+    }
+
+    @Test
+    fun `novel actual markdown parsing keeps code links and images intact`() {
+        val source = "旁白 *轻轻点头* 「你好」（别紧张） `\"code\"` [链接](https://example.com) ![图](image.png)"
+        val parsed = parseMarkdown(source, softBreakAsLineBreak = true, streaming = false)
+        val styled = applyNovelTextStyles(parsed, novelStyles)
+        assertEquals(source, styled.source)
+        val before = (parsed.blocks.single() as MarkdownBlock.Paragraph).content
+        val after = (styled.blocks.single() as MarkdownBlock.Paragraph).content
+        val protectedBefore = before.filter { it is MarkdownInline.Code || it is MarkdownInline.Link || it is MarkdownInline.Image }
+        val protectedAfter = after.filter { it is MarkdownInline.Code || it is MarkdownInline.Link || it is MarkdownInline.Image }
+        assertEquals(3, protectedBefore.size)
+        assertEquals(protectedBefore, protectedAfter)
+        assertTrue(runs(after).any { it.first.contains("轻轻点头") && it.second.color == Color.Gray })
+    }
 
     @Test
     fun `strip html tags but keep text`() {

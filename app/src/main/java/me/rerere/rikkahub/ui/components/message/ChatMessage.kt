@@ -653,6 +653,7 @@ private fun MessagePartsBlock(
                                     ) {
                                         MarkdownBlock(
                                             content = assistantDisplayText,
+                                            novelStyle = role == MessageRole.ASSISTANT && settings.displaySetting.enableNovelMessageStyle,
                                             streaming = streamingText,
                                             onClickCitation = handleClickCitation,
                                         )
@@ -660,6 +661,7 @@ private fun MessagePartsBlock(
                                 } else {
                                     MarkdownBlock(
                                         content = assistantDisplayText,
+                                        novelStyle = role == MessageRole.ASSISTANT && settings.displaySetting.enableNovelMessageStyle,
                                         streaming = streamingText,
                                         onClickCitation = handleClickCitation,
                                         modifier = Modifier

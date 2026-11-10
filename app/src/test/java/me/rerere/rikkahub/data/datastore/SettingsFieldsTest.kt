@@ -112,6 +112,24 @@ class SettingsFieldsTest {
     }
 
     @Test
+    fun `novel message style is opt in and persists independently of theme`() {
+        val legacy = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
+        assertFalse(legacy.enableNovelMessageStyle)
+        assertFalse(emptyPreferences().toSettings().displaySetting.enableNovelMessageStyle)
+        val selected = SAMPLE.copy(displaySetting = SAMPLE.displaySetting.copy(
+            chatThemeId = "kuromi", enableNovelMessageStyle = true,
+        ))
+        val preferences = mutablePreferencesOf().apply { putSettings(selected) }
+        val restored = preferences.toSettings()
+        assertEquals(selected, restored)
+        val disabled = restored.copy(displaySetting = restored.displaySetting.copy(enableNovelMessageStyle = false))
+        preferences.putSettings(disabled, persisted = restored)
+        assertFalse(preferences.toSettings().displaySetting.enableNovelMessageStyle)
+        assertEquals("kuromi", preferences.toSettings().displaySetting.chatThemeId)
+        assertEquals(SAMPLE.assistants, restored.assistants)
+    }
+
+    @Test
     fun `legacy display settings fall back to global call voice`() {
         val restored = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
         assertEquals(null, restored.voiceCallTtsProvider)

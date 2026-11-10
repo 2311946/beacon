@@ -140,6 +140,17 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_user_avatar_title)) },
                     )
                     switchItem(
+                        checked = displaySetting.enableNovelMessageStyle,
+                        onCheckedChange = { enabled ->
+                            displaySetting = displaySetting.copy(enableNovelMessageStyle = enabled)
+                            vm.updateSettings { latest ->
+                                latest.copy(displaySetting = latest.displaySetting.copy(enableNovelMessageStyle = enabled))
+                            }
+                        },
+                        headlineContent = { Text("消息样式美化") },
+                        supportingContent = { Text("小说排版模式：AI 对话高亮，动作与内心独白斜体，旁白淡色；随主题配色，不修改原文") },
+                    )
+                    switchItem(
                         checked = displaySetting.showAssistantBubble,
                         onCheckedChange = { updateDisplaySetting(displaySetting.copy(showAssistantBubble = it)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_desc)) },

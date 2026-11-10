@@ -145,6 +145,7 @@ enum class ConversationSortOrder {
 @Serializable
 data class DisplaySetting(
     val chatThemeId: String = "classic",
+    val enableNovelMessageStyle: Boolean = false,
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
     val showUserAvatar: Boolean = true,
