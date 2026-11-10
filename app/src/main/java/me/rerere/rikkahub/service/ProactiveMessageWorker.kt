@@ -7,6 +7,8 @@ import androidx.work.WorkerParameters
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.buildJsonObject
@@ -40,6 +42,31 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.uuid.Uuid
+
+/** 附加副作用独立执行：活动/状态失败不能改写交付结果，也不能吞掉通知。 */
+internal suspend fun finalizeWakeupDelivery(
+    reply: String?,
+    recordActivity: suspend (String) -> Unit,
+    updateStatus: suspend () -> Unit,
+    notify: suspend (String) -> Unit,
+    onFailure: (String, Exception) -> Unit,
+) {
+    suspend fun attempt(step: String, action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onFailure(step, e)
+        }
+    }
+    val delivered = !reply.isNullOrBlank()
+    attempt("activity") { recordActivity(if (delivered) "message_sent" else "not_sent") }
+    if (delivered) {
+        attempt("status", updateStatus)
+        attempt("notification") { notify(checkNotNull(reply)) }
+    }
+}
 
 /** WorkManager 唤醒可选择休眠、联系用户或执行受现有授权/审批约束的MCP任务。 */
 class ProactiveMessageWorker(
@@ -131,7 +158,7 @@ class ProactiveMessageWorker(
     private suspend fun wakeAssistant(settings: Settings, config: AutonomousWakeupSettings, assistantId: Uuid, now: ZonedDateTime) {
         val assistant = settings.assistants.firstOrNull { it.id == assistantId } ?: return
         val candidate = conversationRepo.getRecentConversations(assistantId, 100)
-            .filter { it.config?.isGroupChat != true }
+            .filter { it.config?.isGroupChat != true && settings.groupChats.none { group -> group.conversationId == it.id } }
             .maxByOrNull { it.updateAt } ?: return
         // 已加载会话以内存为准；会话已删除时不要回退到旧数据库快照。
         val conversation = chatService.getConversation(candidate.id) ?: return
@@ -222,7 +249,6 @@ class ProactiveMessageWorker(
             return
         }
         Log.d(TAG, "Wakeup assistant=$assistantId action=${decision.action}")
-        val recordedDecision = if (decision.action == "sleep") "sleep" else "send_message"
         val activityContent = decision.activityLog.ifBlank {
             decision.reason.ifBlank {
                 when (decision.action) {
@@ -232,31 +258,52 @@ class ProactiveMessageWorker(
                 }
             }
         }.trim().take(240).ifBlank { "角色此刻安静地想着一些事情。" }
-        activityRepository.record(
-            assistantId = assistantId,
-            assistantName = assistant.name.ifBlank { "角色" },
-            conversationId = conversation.id,
-            content = activityContent,
-            decision = recordedDecision,
-        )
-        assistantStatusManager.storeGeneratedStatus(assistantId, activityContent)
-        when (decision.action) {
-            "sleep" -> {
-                Log.d(TAG, "[sleep] activity recorded; no message or follow-up request")
-                return
-            }
-            "do_task" -> Unit
-            "send_message" -> Unit
-            else -> return
+        if (decision.action == "sleep") {
+            activityRepository.record(
+                assistantId = assistantId,
+                assistantName = assistant.name.ifBlank { "角色" },
+                conversationId = conversation.id,
+                content = activityContent,
+                decision = "sleep",
+            )
+            assistantStatusManager.storeGeneratedStatus(assistantId, decision.activityLog)
+            Log.d(TAG, "[sleep] activity recorded; no message or follow-up request")
+            return
+        }
+        if (decision.action !in setOf("do_task", "send_message")) return
+        var activityFinalized = false
+        var deliveryAttemptCompleted = false
+        var deliveredReply: String? = null
+        suspend fun recordDeliveryOutcome() {
+            if (activityFinalized) return
+            // 交付结果只由消息写入决定，不能由活动记录/状态/通知是否成功反推。
+            activityFinalized = true
+            finalizeWakeupDelivery(
+                reply = deliveredReply,
+                recordActivity = { outcome ->
+                    activityRepository.record(
+                        assistantId = assistantId,
+                        assistantName = assistant.name.ifBlank { "角色" },
+                        conversationId = conversation.id,
+                        content = activityContent,
+                        decision = outcome,
+                    )
+                },
+                updateStatus = { assistantStatusManager.storeGeneratedStatus(assistantId, decision.activityLog) },
+                notify = { reply -> postWakeupNotification(applicationContext, conversation.id, assistant, reply) },
+                onFailure = { step, error -> Log.e(TAG, "Wakeup $step failed for assistant=$assistantId", error) },
+            )
         }
         val currentConfig = settingsStore.awaitLoaded().autonomousWakeup
         if (!currentConfig.enabled || assistantId !in currentConfig.assistantIds || !inWindow(currentConfig, LocalTime.now())) {
             Log.d(TAG, "[send-skip] configuration/window changed after decision")
+            recordDeliveryOutcome()
             return
         }
         // 无用户历史不唤醒；沿用现有会话的普通聊天生成链和通知。
         if (conversation.isAwaitingToolApproval) {
             Log.d(TAG, "[send-skip] conversation awaiting tool approval")
+            recordDeliveryOutcome()
             return
         }
         val target = conversation
@@ -267,6 +314,7 @@ class ProactiveMessageWorker(
             val idle = withTimeoutOrNull(30_000L) { chatService.awaitCurrentJob(target.id); true }
             if (idle != true || chatService.getConversation(target.id)?.isAwaitingToolApproval == true) {
                 Log.d(TAG, "[send-skip] existing generation busy or approval pending")
+                recordDeliveryOutcome()
                 return
             }
             val sendSettings = settingsStore.awaitLoaded()
@@ -274,12 +322,19 @@ class ProactiveMessageWorker(
             if (!sendConfig.enabled || assistantId !in sendConfig.assistantIds ||
                 sendSettings.assistants.none { it.id == assistantId } || !inWindow(sendConfig, LocalTime.now())) {
                 Log.d(TAG, "[send-skip] configuration/window changed while waiting")
+                recordDeliveryOutcome()
                 return
             }
-            val latestConversation = chatService.getConversation(target.id) ?: return
-            if (latestConversation.assistantId != assistantId || latestConversation.isAwaitingToolApproval) return
+            val latestConversation = chatService.getConversation(target.id)
+            if (latestConversation == null || latestConversation.assistantId != assistantId ||
+                latestConversation.config?.isGroupChat == true ||
+                sendSettings.groupChats.any { it.conversationId == target.id } || latestConversation.isAwaitingToolApproval) {
+                recordDeliveryOutcome()
+                return
+            }
             if (latestConversation.currentMessages.hasUnansweredAutonomousWakeup()) {
                 Log.d(TAG, "[send-skip] previous wakeup unanswered after decision")
+                recordDeliveryOutcome()
                 return
             }
             val latestUserAt = latestConversation.currentMessages.lastRealUserMessageAt()
@@ -290,18 +345,19 @@ class ProactiveMessageWorker(
                     timeZone = kotlinx.datetime.TimeZone.currentSystemDefault(),
                 )) {
                 Log.d(TAG, "[send-skip] user activity reset idle threshold during decision")
+                recordDeliveryOutcome()
                 return
             }
-            val previousId = latestConversation?.currentMessages?.lastOrNull()?.id
+            val previousId = latestConversation.currentMessages.lastOrNull()?.id
             if (previousId != conversation.currentMessages.lastOrNull()?.id || latestUserAt != lastUserAt) {
                 Log.d(TAG, "[send-skip] chat changed since decision; defer until next wakeup")
+                recordDeliveryOutcome()
                 return
             }
             val resolvedDecision = decision.resolve(readyMcpTools(sendSettings, latestConversation).isNotEmpty())
             if (decision.action == "do_task" && resolvedDecision.action != "do_task") {
                 Log.d(TAG, "[task-fallback] latest conversation has no ready MCP tools or model lacks tool support")
             }
-            val sendAssistant = sendSettings.getAssistantOf(latestConversation)
             Log.d(TAG, "[send] conversation=${target.id} action=${resolvedDecision.action} calling sendWakeupMessage")
             val displayReason = decision.reason
                 .replace(Regex("[\\s\\p{Z}]+"), " ")
@@ -329,29 +385,63 @@ class ProactiveMessageWorker(
                     put("task_status", "not_executed")
                 }
             }
-            val queued = chatService.sendWakeupMessage(
-                target.id,
-                expectedLastMessageId = previousId,
-                content = listOf(UIMessagePart.Text(prompt, metadata)),
-            )
-            if (queued == null) {
-                Log.d(TAG, "[send-skip] conversation became busy or changed before task enqueue")
-                return
+            val reply = if (decision.action == "send_message" && decision.message.isNotBlank()) {
+                // 落库与登记结果作为一个不可取消的短事务；恢复取消时 finally 仍能看到真实结果。
+                withContext(NonCancellable) {
+                    chatService.deliverWakeupMessage(
+                        conversationId = target.id,
+                        assistantId = assistantId,
+                        expectedLastMessageId = previousId,
+                        text = decision.message,
+                        metadata = metadata,
+                    ).also {
+                        deliveredReply = it
+                        deliveryAttemptCompleted = true
+                    }
+                }
+            } else {
+                val queued = chatService.sendWakeupMessage(
+                    target.id,
+                    expectedLastMessageId = previousId,
+                    content = listOf(UIMessagePart.Text(prompt, metadata)),
+                )
+                if (queued == null) {
+                    Log.d(TAG, "[send-skip] conversation became busy or changed before task enqueue")
+                    deliveryAttemptCompleted = true
+                    recordDeliveryOutcome()
+                    return
+                }
+                // MCP/旧格式无正文的决策仍走生成链，只等待本次队列结果。
+                // 取消只会结束 Worker 的等待，不应把仍在 appScope 中运行的生成误记为未发送。
+                val generated = withContext(NonCancellable) {
+                    withTimeoutOrNull(5 * 60_000L) {
+                        try {
+                            queued.await().orEmpty().also { deliveredReply = it }
+                        } finally {
+                            // await 正常返回或生成任务自身失败/取消，都表示交付尝试已有确定结果。
+                            deliveryAttemptCompleted = true
+                        }
+                    }
+                }
+                if (generated == null) {
+                    deliveryAttemptCompleted = true
+                    withContext(NonCancellable) { chatService.stopGeneration(target.id) }
+                }
+                generated
             }
-            // 只消费本次唤醒的队列结果；审批挂起或生成失败不会发送专用完成通知。
-            // 审批续跑仍由普通完成通知负责，避免同一任务两条通知。
-            val reply = withTimeoutOrNull(5 * 60_000L) { queued.await().orEmpty() }
             if (reply == null) {
-                Log.d(TAG, "[send-timeout] conversation=${target.id}; stopping generation")
-                chatService.stopGeneration(target.id)
+                Log.d(TAG, "[not-sent] conversation changed, busy, or task timed out")
                 return
             }
             Log.d(TAG, "[send-result] chars=${reply.length}")
-            if (reply.isNotBlank()) {
-                postWakeupNotification(applicationContext, target.id, assistant, reply)
-            }
         } finally {
-            chatService.removeConversationReference(target.id)
+            try {
+                chatService.removeConversationReference(target.id)
+            } finally {
+                if (deliveryAttemptCompleted || deliveredReply != null) {
+                    withContext(NonCancellable) { recordDeliveryOutcome() }
+                }
+            }
         }
     }
 

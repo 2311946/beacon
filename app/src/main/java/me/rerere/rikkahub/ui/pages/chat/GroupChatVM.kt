@@ -2,11 +2,13 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -50,12 +52,33 @@ class GroupChatVM(
         .map { it?.conversationId }
         .stateIn(viewModelScope, SharingStarted.Eagerly, groupChat.value?.conversationId)
 
+    private val conversationLoadError = MutableStateFlow<String?>(null)
+
     val conversation: StateFlow<Conversation?> = conversationId
-        .flatMapLatest { id -> if (id == null) flowOf(null) else chatService.getConversationFlow(id) }
+        .flatMapLatest { id ->
+            flow<Conversation?> {
+                conversationLoadError.value = null
+                emit(null)
+                if (id == null) return@flow
+                // 先持有引用再取 StateFlow，观察和初始化必须使用同一个存活的 session。
+                chatService.addConversationReference(id)
+                try {
+                    chatService.ensureLoaded(id)
+                    emitAll(chatService.getConversationFlow(id))
+                } finally {
+                    chatService.removeConversationReference(id)
+                }
+            }.catch { e ->
+                if (e is CancellationException) throw e
+                // 只结束当前 ID 的订阅，保留外层 flatMapLatest，后续关联变化仍可恢复。
+                conversationLoadError.value = e.message ?: "群聊会话加载失败"
+                emit(null)
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val error: StateFlow<String?> = combine(taskState, conversationId, chatService.errors) { task, id, errors ->
-        task.error ?: id?.let { current -> errors.lastOrNull { it.conversationId == current }?.error?.message }
+    val error: StateFlow<String?> = combine(taskState, conversationId, chatService.errors, conversationLoadError) { task, id, errors, loadError ->
+        task.error ?: loadError ?: id?.let { current -> errors.lastOrNull { it.conversationId == current }?.error?.message }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, taskState.value.error)
 
     val replyMessageId: StateFlow<Uuid?> = conversationId
@@ -68,22 +91,6 @@ class GroupChatVM(
         .stateIn(viewModelScope, SharingStarted.Eagerly, taskState.value.currentSpeakerId)
     val awaitingManualSpeaker: StateFlow<Boolean> = taskState.map { it.awaitingManualSpeaker }
         .stateIn(viewModelScope, SharingStarted.Eagerly, taskState.value.awaitingManualSpeaker)
-
-    init {
-        // 页面引用与后台任务引用分开持有。这里只释放页面自己的引用，不调用 stop。
-        viewModelScope.launch {
-            conversationId.collectLatest { id ->
-                if (id == null) return@collectLatest
-                chatService.addConversationReference(id)
-                try {
-                    chatService.ensureLoaded(id)
-                    awaitCancellation()
-                } finally {
-                    chatService.removeConversationReference(id)
-                }
-            }
-        }
-    }
 
     fun updateChatModel(model: Model) {
         viewModelScope.launch {

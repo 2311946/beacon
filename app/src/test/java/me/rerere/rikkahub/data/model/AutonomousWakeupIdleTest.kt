@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.model
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDateTime
+import me.rerere.rikkahub.service.finalizeWakeupDelivery
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -68,6 +70,59 @@ class AutonomousWakeupIdleTest {
         val messages = listOf(user(), wakeupEvent(), UIMessage.assistant("在吗？").copy(createdAt = recent))
         repeat(5) { assertTrue(messages.hasUnansweredAutonomousWakeup()) }
         assertEquals(last, messages.lastRealUserMessageAt())
+    }
+
+    @Test fun deliveredDecisionIsAnAssistantMessageInTheSamePrivateConversation() {
+        val owner = kotlin.uuid.Uuid.random()
+        val lastMessage = user()
+        val conversation = Conversation.ofId(kotlin.uuid.Uuid.random(), owner, listOf(lastMessage.toMessageNode()))
+        val reply = UIMessage.assistant("忙完了吗？").copy(parts = listOf(UIMessagePart.Text(
+            "忙完了吗？", buildJsonObject { put("beacon_event", "autonomous_wakeup") },
+        )))
+        val delivered = conversation.withDeliveredWakeup(reply, owner, lastMessage.id)!!
+        assertEquals(conversation.id, delivered.id)
+        assertEquals(owner, delivered.assistantId)
+        assertEquals(listOf(lastMessage, reply), delivered.currentMessages)
+        assertEquals(me.rerere.ai.core.MessageRole.ASSISTANT, delivered.currentMessages.last().role)
+        assertTrue(delivered.currentMessages.hasUnansweredAutonomousWakeup())
+        assertNull(conversation.withDeliveredWakeup(reply, kotlin.uuid.Uuid.random(), lastMessage.id))
+        assertNull(conversation.withDeliveredWakeup(reply, owner, kotlin.uuid.Uuid.random()))
+        assertNull(conversation.copy(config = ConversationConfig(isGroupChat = true))
+            .withDeliveredWakeup(reply, owner, lastMessage.id))
+        assertNull(delivered.withDeliveredWakeup(reply, owner, reply.id))
+        assertNull(conversation.withDeliveredWakeup(UIMessage.assistant(""), owner, lastMessage.id))
+    }
+
+    @Test fun deliveredMessageRemainsSentWhenActivityAndStatusFail() = runBlocking<Unit> {
+        val outcomes = mutableListOf<String>()
+        val failures = mutableListOf<String>()
+        val notifications = mutableListOf<String>()
+        finalizeWakeupDelivery(
+            reply = "忙完了吗？",
+            recordActivity = { outcomes += it; error("活动记录失败") },
+            updateStatus = { error("状态写入失败") },
+            notify = { notifications += it },
+            onFailure = { step, _ -> failures += step },
+        )
+        assertEquals(listOf("message_sent"), outcomes)
+        assertEquals(listOf("activity", "status"), failures)
+        assertEquals(listOf("忙完了吗？"), notifications)
+    }
+
+    @Test fun undeliveredMessageDoesNotUpdateStatusOrNotifyEvenIfRecordingFails() = runBlocking<Unit> {
+        for (reply in listOf(null, "", "  ")) {
+            val outcomes = mutableListOf<String>()
+            val failures = mutableListOf<String>()
+            finalizeWakeupDelivery(
+                reply = reply,
+                recordActivity = { outcomes += it; error("活动记录失败") },
+                updateStatus = { fail("未发送不更新状态") },
+                notify = { fail("未发送不通知") },
+                onFailure = { step, _ -> failures += step },
+            )
+            assertEquals(listOf("not_sent"), outcomes)
+            assertEquals(listOf("activity"), failures)
+        }
     }
 
     @Test fun normalAssistantReplyDoesNotBlockFirstWakeup() {

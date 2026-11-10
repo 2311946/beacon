@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.DEFAULT_GROUP_CHAT_SYSTEM_PROMPT
 import me.rerere.rikkahub.data.model.GroupActivationStrategy
 import me.rerere.rikkahub.data.model.GroupChat
 import me.rerere.rikkahub.data.model.GroupChatDefaults
@@ -198,6 +199,16 @@ class GroupChatSettingsVM(
         else update { it.copy(singleChatContextCountOverride = value) }
     }
 
+    fun setSystemPrompt(prompt: String) {
+        if (isGlobal) updateDefaults { it.copy(systemPrompt = prompt) }
+        else update { it.copy(systemPromptOverride = prompt) }
+    }
+
+    fun resetSystemPrompt() {
+        if (isGlobal) updateDefaults { it.copy(systemPrompt = DEFAULT_GROUP_CHAT_SYSTEM_PROMPT) }
+        else update { it.copy(systemPromptOverride = null) }
+    }
+
     fun resetStrategy() = update { it.copy(activationStrategyOverride = null) }
 
     fun resetAutoRounds() = update { it.copy(autoChatRoundsOverride = null) }
@@ -207,13 +218,18 @@ class GroupChatSettingsVM(
     fun resetSingleChatContextCount() = update { it.copy(singleChatContextCountOverride = null) }
 
     fun resetAllToDefaults() {
-        update {
-            it.copy(
-                activationStrategyOverride = null,
-                autoChatRoundsOverride = null,
-                autoModeDelayOverride = null,
-                singleChatContextCountOverride = null,
-            )
+        if (isGlobal) {
+            updateDefaults { GroupChatDefaults() }
+        } else {
+            update {
+                it.copy(
+                    activationStrategyOverride = null,
+                    autoChatRoundsOverride = null,
+                    autoModeDelayOverride = null,
+                    singleChatContextCountOverride = null,
+                    systemPromptOverride = null,
+                )
+            }
         }
     }
 

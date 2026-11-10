@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -358,8 +360,13 @@ class RouteActivity : ComponentActivity() {
                         },
                         entryProvider = entryProvider {
                             entry<Screen.Chat>(
-                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
-                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
+                                // 聊天页必须整页替换，避免前一个群聊 entry 在单聊淡入期间短暂露出。
+                                metadata = NavDisplay.transitionSpec {
+                                    EnterTransition.None togetherWith ExitTransition.None
+                                }
+                                    + NavDisplay.popTransitionSpec {
+                                        EnterTransition.None togetherWith ExitTransition.None
+                                    }
                             ) { key ->
                                 ChatPage(
                                     id = Uuid.parse(key.id),

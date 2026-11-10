@@ -5,6 +5,7 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.db.dao.ActivityDayCount
 import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
 import kotlin.uuid.Uuid
 
@@ -39,6 +40,9 @@ class AutonomousActivityRepository(
         startInclusive = startInclusive,
         endExclusive = endExclusive,
     )
+
+    fun observeDayCounts(assistantId: Uuid): Flow<List<ActivityDayCount>> =
+        database.autonomousActivityDao().observeDayCounts(assistantId.toString())
 
     fun observeActivities(assistantId: Uuid): Flow<PagingData<AutonomousActivityEntity>> = Pager(
         config = PagingConfig(pageSize = 30),

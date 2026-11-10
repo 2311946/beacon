@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import kotlinx.coroutines.flow.Flow
@@ -101,8 +102,12 @@ class ChatDrawerVM(
                 } else {
                     conversationRepo.getConversationsOfFolderPaging(folderId, sortOrder)
                 }
-                paging.map { pagingData ->
+                combine(paging, settingsStore.settingsFlow.map { settings ->
+                    settings.groupChats.mapNotNull { it.conversationId }.toSet()
+                }.distinctUntilChanged()) { pagingData, groupConversationIds ->
                     pagingData
+                        // 旧版本即使丢失 config 群聊标记，也不能把关联会话当单聊入口展示。
+                        .filter { it.id !in groupConversationIds }
                         .map { ConversationListItem.Item(it) }
                         .insertSeparators<ConversationListItem.Item, ConversationListItem> { before, after ->
                             when {

@@ -102,8 +102,8 @@ private val KuromiAppearance = ChatThemeAppearance(
     inputColor = Color(0xFF1E1E2E),
     textColor = Color.White, secondaryTextColor = Color(0xFFFFB6C1),
     accentColor = Color(0xFFB388FF), forceAssistantBubble = true,
-    novelDialogueColor = Color(0xFFB388FF), novelActionColor = Color(0xFFC9B5E8),
-    novelNarrationColor = Color(0xFFD2CEDB), novelThoughtColor = Color(0xFF9D8CAF),
+    novelDialogueColor = Color(0xFFB388FF), novelActionColor = Color(0xFF9E9E9E),
+    novelNarrationColor = Color(0xFF808080), novelThoughtColor = Color(0xFF666666),
 )
 
 fun BuiltInChatTheme.appearance(): ChatThemeAppearance = when (this) {

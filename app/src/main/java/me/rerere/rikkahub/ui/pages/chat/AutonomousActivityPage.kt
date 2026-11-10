@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -26,19 +28,33 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.paging.LoadState
-import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemKey
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
+import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
 import me.rerere.rikkahub.data.repository.AutonomousActivityRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.compose.koinInject
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -50,11 +66,25 @@ fun AutonomousActivityPage(
     assistantId: Uuid,
     repository: AutonomousActivityRepository = koinInject(),
 ) {
-    val activityFlow = remember(repository, assistantId) {
-        repository.observeActivities(assistantId)
+    val zone = ZoneId.systemDefault()
+    val dayFlow = remember(repository, assistantId, zone) { repository.observeDayCounts(assistantId) }
+    val (days, retryDays) = key(repository, assistantId, zone) { observeActivityList(dayFlow) }
+    // 只保留展开状态；每次进入页面默认全部收起，角色之间不共享。
+    var expandedDays by remember(assistantId, zone) { mutableStateOf(emptySet<String>()) }
+    val expandedRecords = days.items.filter { it.day in expandedDays }.associate { day ->
+        val records = key(repository, assistantId, zone, day.day) {
+            val flow = remember(repository, assistantId, zone, day.day) {
+                val date = LocalDate.parse(day.day)
+                repository.observeRange(
+                    assistantId,
+                    date.atStartOfDay(zone).toInstant().toEpochMilli(),
+                    date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                )
+            }
+            observeActivityList(flow)
+        }
+        day.day to records
     }
-    val activities = activityFlow.collectAsLazyPagingItems()
-    val refreshState = activities.loadState.refresh
 
     Scaffold(
         topBar = {
@@ -71,71 +101,107 @@ fun AutonomousActivityPage(
                 .consumeWindowInsets(innerPadding),
             contentAlignment = Alignment.Center,
         ) {
-            if (activities.itemCount == 0) {
-                when (refreshState) {
-                    is LoadState.Loading -> ActivityListStatus(
-                        message = "正在加载活动记录…",
-                        loading = true,
-                    )
-
-                    is LoadState.Error -> ActivityListStatus(
-                        message = "活动记录加载失败，请重试",
-                        onRetry = { activities.retry() },
-                    )
-
-                    is LoadState.NotLoading -> ActivityListStatus(
-                        message = "暂无活动记录\n角色自主活动后，会在这里留下记录",
-                    )
-                }
+            if (days.items.isEmpty()) {
+                ActivityListStatus(
+                    message = when {
+                        days.loading -> "正在加载活动记录…"
+                        days.error != null -> "活动记录加载失败，请重试"
+                        else -> "暂无活动记录\n角色自主活动后，会在这里留下记录"
+                    },
+                    loading = days.loading,
+                    onRetry = if (days.error != null) retryDays else null,
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (refreshState is LoadState.Loading) {
-                        item(key = "refresh_loading") {
-                            ActivityListStatus(message = "正在更新…", loading = true)
-                        }
-                    } else if (refreshState is LoadState.Error) {
-                        item(key = "refresh_error") {
-                            ActivityListStatus(
-                                message = "更新失败，已保留现有记录",
-                                onRetry = { activities.retry() },
-                            )
+                    if (days.error != null) {
+                        item(key = "days_error") {
+                            ActivityListStatus(message = "更新失败，已保留现有记录", onRetry = retryDays)
                         }
                     }
-
-                    items(
-                        count = activities.itemCount,
-                        key = activities.itemKey { it.id },
-                        contentType = { "activity" },
-                    ) { index ->
-                        val activity = activities[index] ?: return@items
-                        AutonomousActivityItem(
-                            activity = activity,
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
-
-                    when (activities.loadState.append) {
-                        is LoadState.Loading -> item(key = "append_loading") {
-                            ActivityListStatus(message = "正在加载更多…", loading = true)
+                    days.items.forEach { day ->
+                        val expanded = day.day in expandedDays
+                        item(key = "day:${day.day}", contentType = "day") {
+                            Surface(
+                                onClick = {
+                                    expandedDays = if (expanded) expandedDays - day.day else expandedDays + day.day
+                                },
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    stateDescription = if (expanded) "已展开" else "已收起"
+                                },
+                                shape = MaterialTheme.shapes.extraLarge,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Text(
+                                        text = day.day,
+                                        style = MaterialTheme.typography.titleMediumEmphasized,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text("${day.count} 条活动", style = MaterialTheme.typography.labelLarge)
+                                    Icon(
+                                        imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                                        contentDescription = if (expanded) "收起当天记录" else "展开当天记录",
+                                    )
+                                }
+                            }
                         }
-
-                        is LoadState.Error -> item(key = "append_error") {
-                            ActivityListStatus(
-                                message = "更多记录加载失败",
-                                onRetry = { activities.retry() },
-                            )
+                        expandedRecords[day.day]?.let { (records, retryRecords) ->
+                            if (records.loading || records.error != null || records.items.isEmpty()) {
+                                item(key = "status:${day.day}") {
+                                    ActivityListStatus(
+                                        message = when {
+                                            records.loading -> "正在加载当天记录…"
+                                            records.error != null -> "当天记录加载失败，请重试"
+                                            else -> "当天暂无记录"
+                                        },
+                                        loading = records.loading,
+                                        onRetry = if (records.error != null) retryRecords else null,
+                                    )
+                                }
+                            }
+                            items(records.items.asReversed(), key = { "activity:${it.id}" }, contentType = { "activity" }) { activity ->
+                                AutonomousActivityItem(activity = activity, modifier = Modifier.animateItem())
+                            }
                         }
-
-                        is LoadState.NotLoading -> Unit
                     }
                 }
             }
         }
     }
+}
+
+private data class ActivityListState<T>(
+    val items: List<T> = emptyList(),
+    val loading: Boolean = true,
+    val error: Throwable? = null,
+)
+
+/** 列表首次加载、实时更新和重试共用；失败时保留上次记录。 */
+@Composable
+private fun <T> observeActivityList(flow: Flow<List<T>>): Pair<ActivityListState<T>, () -> Unit> {
+    var retry by remember(flow) { mutableIntStateOf(0) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val state by produceState(ActivityListState<T>(), flow, retry, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            value = value.copy(loading = true, error = null)
+            try {
+                flow.collect { value = ActivityListState(items = it, loading = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                value = value.copy(loading = false, error = e)
+            }
+        }
+    }
+    return state to { retry++ }
 }
 
 @Composable
@@ -144,9 +210,11 @@ private fun AutonomousActivityItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val isContact = activity.decision == "send_message"
+    val isContact = activity.decision == "message_sent"
     val decisionLabel = when (activity.decision) {
-        "send_message" -> "决定联系"
+        "send_message" -> "决定联系（旧记录，发送结果未知）"
+        "message_sent" -> "已发送消息"
+        "not_sent" -> "想联系，但未发送"
         "sleep" -> "暂不打扰"
         else -> activity.decision.ifBlank { "未记录决策" }
     }

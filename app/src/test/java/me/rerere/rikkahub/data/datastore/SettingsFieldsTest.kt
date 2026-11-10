@@ -34,6 +34,25 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class SettingsFieldsTest {
+    @Test
+    fun `calendar is opt in and persists independently per assistant`() {
+        assertFalse(Assistant().enableCalendar)
+        assertFalse(JsonInstant.decodeFromString<Assistant>("{}").enableCalendar)
+        val enabled = Assistant(name = "开启日历", enableCalendar = true)
+        val disabled = Assistant(name = "默认关闭")
+        val selected = SAMPLE.copy(assistants = listOf(enabled, disabled))
+        val preferences = mutablePreferencesOf().apply { putSettings(selected) }
+        val restored = preferences.toSettings()
+        assertEquals(selected.assistants, restored.assistants)
+
+        val turnedOff = restored.copy(assistants = restored.assistants.map {
+            if (it.id == enabled.id) it.copy(enableCalendar = false) else it
+        })
+        preferences.putSettings(turnedOff, persisted = restored)
+        assertEquals(turnedOff.assistants, preferences.toSettings().assistants)
+        assertEquals(disabled, preferences.toSettings().assistants.last())
+    }
+
     @OptIn(ExperimentalSerializationApi::class)
     @Test
     fun `every settings property has exactly one field`() {

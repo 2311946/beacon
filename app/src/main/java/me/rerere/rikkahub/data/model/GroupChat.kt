@@ -36,6 +36,7 @@ data class GroupChat(
     val autoChatRoundsOverride: Int? = legacyAutoChatRounds,
     val singleChatContextCountOverride: Int? = legacySingleChatContextCount,
     val avatar: Avatar = Avatar.Dummy,
+    val systemPromptOverride: String? = null, // null 继承全局；空字符串不附加群聊提示词
 ) {
     /** 生成和展示时传入当前 Settings.groupChatDefaults，不要把解析结果写回群配置。 */
     fun resolved(defaults: GroupChatDefaults): GroupChatDefaults = GroupChatDefaults(
@@ -43,6 +44,7 @@ data class GroupChat(
         autoChatRounds = (autoChatRoundsOverride ?: defaults.autoChatRounds).coerceIn(1, 10),
         autoModeDelay = (autoModeDelayOverride ?: defaults.autoModeDelay).coerceIn(0, 60),
         singleChatContextCount = normalizeChatContextCount(singleChatContextCountOverride ?: defaults.singleChatContextCount),
+        systemPrompt = systemPromptOverride ?: defaults.systemPrompt,
     )
 
     // 兼容尚未接入全局默认值的调用方；实际运行配置应通过 resolved 读取。
@@ -52,12 +54,17 @@ data class GroupChat(
     val singleChatContextCount: Int get() = resolved(GroupChatDefaults()).singleChatContextCount
 }
 
+const val DEFAULT_GROUP_CHAT_SYSTEM_PROMPT = """回复时使用小说风格，在保留角色原有人设、性格与说话习惯的基础上自然参与群聊。
+对白使用“引号”包裹，动作描写使用*星号*包裹，心理描写使用（括号）包裹。
+只描写当前角色自己的对白、动作和心理，不代替其他成员或用户发言，也不擅自决定他人的行为或心理。"""
+
 @Serializable
 data class GroupChatDefaults(
     val activationStrategy: GroupActivationStrategy = GroupActivationStrategy.LIST,
     val autoChatRounds: Int = 2,
     val autoModeDelay: Int = 3, // 自动接话延迟（秒），0=立即
     val singleChatContextCount: Int = 5, // 单聊/群聊上下文互通条数，范围 1–10
+    val systemPrompt: String = DEFAULT_GROUP_CHAT_SYSTEM_PROMPT,
 )
 
 internal fun normalizeChatContextCount(count: Int): Int = if (count <= 0) 5 else count.coerceAtMost(10)
@@ -72,6 +79,7 @@ internal fun mergeGroupSettingsDraft(latest: GroupChat, base: GroupChat, draft: 
     autoChatRoundsOverride = if (draft.autoChatRoundsOverride != base.autoChatRoundsOverride) draft.autoChatRoundsOverride else latest.autoChatRoundsOverride,
     autoModeDelayOverride = if (draft.autoModeDelayOverride != base.autoModeDelayOverride) draft.autoModeDelayOverride else latest.autoModeDelayOverride,
     singleChatContextCountOverride = if (draft.singleChatContextCountOverride != base.singleChatContextCountOverride) draft.singleChatContextCountOverride else latest.singleChatContextCountOverride,
+    systemPromptOverride = if (draft.systemPromptOverride != base.systemPromptOverride) draft.systemPromptOverride else latest.systemPromptOverride,
 )
 
 internal fun mergeGroupDefaultsDraft(latest: GroupChatDefaults, base: GroupChatDefaults, draft: GroupChatDefaults): GroupChatDefaults = latest.copy(
@@ -79,6 +87,7 @@ internal fun mergeGroupDefaultsDraft(latest: GroupChatDefaults, base: GroupChatD
     autoChatRounds = if (draft.autoChatRounds != base.autoChatRounds) draft.autoChatRounds else latest.autoChatRounds,
     autoModeDelay = if (draft.autoModeDelay != base.autoModeDelay) draft.autoModeDelay else latest.autoModeDelay,
     singleChatContextCount = if (draft.singleChatContextCount != base.singleChatContextCount) draft.singleChatContextCount else latest.singleChatContextCount,
+    systemPrompt = if (draft.systemPrompt != base.systemPrompt) draft.systemPrompt else latest.systemPrompt,
 )
 
 /** 群聊选人策略，具体调度由群聊执行层负责。 */

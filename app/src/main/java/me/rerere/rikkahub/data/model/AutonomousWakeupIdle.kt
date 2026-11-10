@@ -42,6 +42,18 @@ private fun UIMessage.hasWakeupReplyText(): Boolean = !isSynthetic && !isContext
     parts.any { it is me.rerere.ai.ui.UIMessagePart.Text && it.text.isNotBlank() } &&
     parts.none { (it.metadata?.get("beacon_event") as? JsonPrimitive)?.content == "empty_reply" }
 
+/** 只在原单聊和原历史仍匹配时追加已生成的正文；绝不复制或改写其他会话节点。 */
+internal fun Conversation.withDeliveredWakeup(
+    message: UIMessage,
+    expectedAssistantId: kotlin.uuid.Uuid,
+    expectedLastMessageId: kotlin.uuid.Uuid?,
+): Conversation? {
+    if (assistantId != expectedAssistantId || config?.isGroupChat == true ||
+        message.role != MessageRole.ASSISTANT || !message.hasWakeupEvent() || !message.hasWakeupReplyText() ||
+        currentMessages.lastOrNull()?.id != expectedLastMessageId || currentMessages.hasUnansweredAutonomousWakeup()) return null
+    return copy(messageNodes = messageNodes + message.toMessageNode(), updateAt = java.time.Instant.now())
+}
+
 /** 从单聊中提取最后一条真实用户发言，避免 AI 回复和内部事件重置空闲计时。 */
 fun List<UIMessage>.lastRealUserMessageAt(): LocalDateTime? = asSequence()
     .filter { it.isRealWakeupUserActivity() }

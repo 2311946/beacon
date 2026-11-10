@@ -77,6 +77,7 @@ class ChatTurnContext(
     val currentTimePrompt: String = formatCurrentChatTime(java.time.LocalDateTime.now()),
     // 每次组装请求重新检查，挂断后不再追加；不修改持久化角色设定。
     val isVoiceCallActive: () -> Boolean = { false },
+    val groupSystemPrompt: String = "",
 ) {
     // 本轮请求尾部的临时 USER；不写入历史，不受旧历史快照冻结。工具步骤/重试复用。
     val requestContextMessage: UIMessage = createTurnUserContext(currentTimePrompt, chatContext)
@@ -117,6 +118,7 @@ class ChatRequestFactory(
         allowTools: Boolean = true,
         chatContext: String = "",
         isVoiceCallActive: () -> Boolean = { false },
+        groupSystemPrompt: String = "",
     ): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
         val assistant = settings.getAssistantOf(conversation)
@@ -130,6 +132,7 @@ class ChatRequestFactory(
             providerSetting = provider,
             conversationId = conversation.id,
             chatContext = chatContext,
+            groupSystemPrompt = groupSystemPrompt,
             isVoiceCallActive = isVoiceCallActive,
             stickerPrompt = StickerReplyResolver.buildPrompt(StickerStore.get(context).groups.value),
             conversationSystemPrompt = conversation.customSystemPrompt,
@@ -259,6 +262,13 @@ class ChatRequestFactory(
                 if (effectiveSystemPrompt.isNotBlank()) {
                     append(effectiveSystemPrompt)
                 }
+                // 群聊公共规则独立于角色人设，不受会话系统提示词覆盖开关限制。
+                if (turn.groupSystemPrompt.isNotBlank()) {
+                    appendLine()
+                    appendLine()
+                    appendLine("[群聊提示词]")
+                    append(turn.groupSystemPrompt)
+                }
 
                 // 可变化的记忆放入用户上下文，不再使 system 随后台记忆整理改变。
                 if (turn.stickerPrompt.isNotBlank()) {
@@ -337,7 +347,7 @@ class ChatRequestFactory(
             turn.settings.modeInjections.toString(), turn.settings.lorebooks.toString(),
             turn.settings.displaySetting.userNickname, turn.workspaceCwd.orEmpty(), turn.stickerPrompt,
             turn.settings.chatImageGeneration.toString(),
-            voiceCallActive.toString(),
+            voiceCallActive.toString(), turn.groupSystemPrompt,
             turn.settings.mediaGenerationProviders.flatMap { provider ->
                 provider.models.filter { it.kind == me.rerere.mediagen.model.MediaKind.IMAGE && provider.capabilities(it.kind) != null }.map { it.id }
             }.toString(),

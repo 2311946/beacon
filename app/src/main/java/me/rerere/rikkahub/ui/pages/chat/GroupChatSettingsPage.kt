@@ -49,6 +49,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.VolumeHigh
+import me.rerere.rikkahub.data.model.DEFAULT_GROUP_CHAT_SYSTEM_PROMPT
 import me.rerere.rikkahub.data.model.GroupActivationStrategy
 import me.rerere.rikkahub.data.model.normalizeChatContextCount
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -177,9 +178,9 @@ fun GroupChatSettingsPage(
                     )
                     if (!isGlobal) {
                         item(
-                            onClick = vm::resetAllToDefaults,
+                            onClick = if (vm.saving) null else vm::resetAllToDefaults,
                             headlineContent = { Text("全部恢复全局默认") },
-                            supportingContent = { Text("仅重置以下四项，不修改群名、成员或禁言设置") },
+                            supportingContent = { Text("仅将发言策略、自动接话轮数、间隔、上下文互通及群聊提示词恢复继承，不修改群名、头像、成员或禁言设置；保存后生效。") },
                         )
                     }
                 }
@@ -261,6 +262,42 @@ fun GroupChatSettingsPage(
                     }
                 }
             }
+            item("system_prompt") {
+                CardGroup {
+                    formItem(headlineContent = { Text("群聊提示词") }) {
+                        if (!isGlobal) {
+                            OverrideStatus(
+                                inherited = current?.systemPromptOverride == null,
+                                onReset = vm::resetSystemPrompt,
+                                onCustomize = { vm.setSystemPrompt(config.systemPrompt) },
+                                enabled = !vm.saving,
+                            )
+                        }
+                        OutlinedTextField(
+                            value = config.systemPrompt,
+                            onValueChange = vm::setSystemPrompt,
+                            label = { Text("群聊提示词") },
+                            enabled = !vm.saving,
+                            singleLine = false,
+                            minLines = 5,
+                            maxLines = 12,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = if (isGlobal) "作为继承此项的群聊的附加提示词；留空表示不附加。修改后点击保存生效。"
+                            else "在角色原有人设基础上附加；留空表示本群不附加群聊提示词，不等于继承。修改后点击保存生效。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = { vm.setSystemPrompt(DEFAULT_GROUP_CHAT_SYSTEM_PROMPT) },
+                            enabled = !vm.saving,
+                        ) {
+                            Text("恢复内置模板")
+                        }
+                    }
+                }
+            }
             if (current != null) {
                 item("members_title") {
                     Text(
@@ -339,6 +376,7 @@ private fun OverrideStatus(
     inherited: Boolean,
     onReset: () -> Unit,
     onCustomize: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -350,7 +388,7 @@ private fun OverrideStatus(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
-        TextButton(onClick = if (inherited) onCustomize else onReset) {
+        TextButton(onClick = if (inherited) onCustomize else onReset, enabled = enabled) {
             Text(if (inherited) "设为自定义" else "恢复继承")
         }
     }

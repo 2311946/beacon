@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import me.rerere.bettertext.markdown.MarkdownBlock
@@ -123,7 +124,7 @@ data class NovelTextStyles(
 /** 只改变显示 AST；文档、表格源码以及代码、链接、图片、公式节点保持原样。 */
 internal fun applyNovelTextStyles(document: MarkdownDocument, styles: NovelTextStyles): MarkdownDocument {
     fun mapBlock(block: MarkdownBlock): MarkdownBlock = when (block) {
-        is MarkdownBlock.Paragraph -> block.copy(content = styleNovelInlines(block.content, styles))
+        is MarkdownBlock.Paragraph -> styleNovelParagraph(block, styles)
         is MarkdownBlock.Heading -> block.copy(content = styleNovelInlines(block.content, styles))
         is MarkdownBlock.Quote -> block.copy(children = block.children.map { mapBlock(it) })
         is MarkdownBlock.ListBlock -> block.copy(
@@ -143,6 +144,56 @@ internal fun applyNovelTextStyles(document: MarkdownDocument, styles: NovelTextS
         is MarkdownBlock.CodeBlock, MarkdownBlock.Divider -> block
     }
     return document.copy(blocks = document.blocks.map { mapBlock(it) })
+}
+
+/** Split only the display paragraph so inline thoughts also receive a real multiline indent.
+ * No spaces or newlines are inserted into Text nodes or the document source.
+ */
+private fun styleNovelParagraph(block: MarkdownBlock.Paragraph, styles: NovelTextStyles): MarkdownBlock {
+    val styled = styleNovelInlines(block.content, styles)
+    val groups = mutableListOf<Pair<Boolean, MutableList<MarkdownInline>>>()
+    fun append(thought: Boolean, node: MarkdownInline) {
+        if (groups.lastOrNull()?.first != thought) groups.add(thought to mutableListOf())
+        groups.last().second.add(node)
+    }
+    val text = StringBuilder()
+    fun collect(nodes: List<MarkdownInline>) {
+        nodes.forEach { node ->
+            when (node) {
+                is MarkdownInline.Text -> text.append(node.text)
+                is MarkdownInline.Styled -> collect(node.children)
+                else -> text.append(NOVEL_BARRIER)
+            }
+        }
+    }
+    collect(styled)
+    val kinds = novelTextKinds(text.toString())
+    var offset = 0
+    fun split(nodes: List<MarkdownInline>): List<Pair<Boolean, List<MarkdownInline>>> =
+        nodes.flatMap { node ->
+            when (node) {
+                is MarkdownInline.Styled -> split(node.children).map { (thought, children) ->
+                    thought to listOf(node.copy(children = children))
+                }
+                is MarkdownInline.Text -> {
+                    val thought = node.text.isNotEmpty() && kinds[offset] and NOVEL_THOUGHT != 0
+                    offset += node.text.length
+                    listOf(thought to listOf(node))
+                }
+                else -> { offset++; listOf(false to listOf(node)) }
+            }
+        }
+    split(styled).forEach { (thought, nodes) -> nodes.forEach { append(thought, it) } }
+    if (groups.none { it.first }) return block.copy(content = styled)
+    val paragraphs = groups.map { (thought, nodes) ->
+        block.copy(
+            content = nodes,
+            style = if (thought) (block.style ?: TextStyle()).merge(TextStyle(
+                textIndent = TextIndent(firstLine = 1.5.em, restLine = 1.5.em),
+            )) else block.style,
+        )
+    }
+    return if (paragraphs.size == 1) paragraphs.single() else MarkdownBlock.Container(paragraphs, TextStyle())
 }
 
 private const val NOVEL_DIALOGUE = 1
@@ -231,14 +282,14 @@ private fun styleNovelInlines(content: List<MarkdownInline>, styles: NovelTextSt
                         val kind = kinds[start + localStart]
                         var localEnd = localStart + 1
                         while (localEnd < node.text.length && kinds[start + localEnd] == kind) localEnd++
-                        var span = styles.narration
+                        var span = originalStyle.merge(styles.narration)
                         if (action) span = span.merge(styles.action)
                         if (kind and NOVEL_DIALOGUE != 0) span = span.merge(styles.dialogue)
                         if (kind and NOVEL_THOUGHT != 0) span = span.merge(styles.thought)
-                        // 原有强调和显式样式优先，小说样式不抹去 Markdown 的加粗、斜体等属性。
+                        // 小说分类的颜色和强调优先，避免 HTML/Markdown 样式覆盖分类层次。
                         add(
                             MarkdownInline.Styled(
-                                style = span.merge(originalStyle),
+                                style = span,
                                 children = listOf(MarkdownInline.Text(node.text.substring(localStart, localEnd))),
                             ),
                         )

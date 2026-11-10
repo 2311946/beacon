@@ -43,8 +43,13 @@ class AssistantCalendarGenerator(
     private val locks = ConcurrentHashMap<Uuid, Mutex>()
     private val concurrency = Semaphore(2)
 
+    private suspend fun isCalendarEnabled(assistantId: Uuid): Boolean =
+        settingsStore.awaitLoaded().assistants.firstOrNull { it.id == assistantId }?.enableCalendar == true
+
     suspend fun ensureDay(assistantId: Uuid, date: LocalDate) = withContext(Dispatchers.IO) {
         locks.getOrPut(assistantId) { Mutex() }.withLock {
+            // 关闭时连日常模板也不复制，已有日程仍可读取。
+            if (!isCalendarEnabled(assistantId)) return@withLock
             if (!repository.materializeDay(assistantId, date)) {
                 generate(assistantId, date, createTemplate = true)
             }
@@ -53,6 +58,7 @@ class AssistantCalendarGenerator(
 
     suspend fun regenerateDay(assistantId: Uuid, date: LocalDate) = withContext(Dispatchers.IO) {
         locks.getOrPut(assistantId) { Mutex() }.withLock {
+            check(isCalendarEnabled(assistantId)) { "请先在角色设置中开启「日历行程」" }
             generate(assistantId, date, createTemplate = false)
         }
     }
@@ -65,6 +71,8 @@ class AssistantCalendarGenerator(
                     val settings = settingsStore.awaitLoaded()
                     val assistant = settings.assistants.firstOrNull { it.id == assistantId }
                         ?: error("角色已不存在")
+                    // 等待并发名额期间开关可能已关闭，使用最新角色配置复查。
+                    check(assistant.enableCalendar) { "请先在角色设置中开启「日历行程」" }
                     val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId)
                         ?.takeIf { it.modelId.isNotBlank() && it.type == ModelType.CHAT && Modality.TEXT in it.outputModalities }
                         ?: error("请先为角色配置可用的聊天模型")
@@ -113,6 +121,8 @@ class AssistantCalendarGenerator(
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             throw IllegalStateException("AI 生成日程超时，请重试", e)
         }
+        // 请求过程中关闭开关，不将晚到的 AI 结果写入日程或模板。
+        check(isCalendarEnabled(assistantId)) { "该角色的「日历行程」已关闭，本次生成未保存" }
         check(repository.commitGeneratedDay(assistantId, date, entries, revision, createTemplate)) {
             "日程已被其他操作修改，本次生成未覆盖现有计划，请重新查看"
         }

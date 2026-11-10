@@ -63,6 +63,14 @@ class AssistantStatusLogicTest {
     }
 
     @Test
+    fun displayStatusMustNotMasqueradeAsWakeupExecution() {
+        listOf("决定联系🙂", "已发送💬", "send_message🙂", "do_task🔧", "sleep💤").forEach {
+            assertNull(cleanAssistantStatus(it))
+        }
+        assertEquals("想你了💭", cleanAssistantStatus("想你了💭"))
+    }
+
+    @Test
     fun codePointTruncationDoesNotSplitSurrogatePairs() {
         assertEquals("🙂🙂", "🙂🙂🙂".takeStatusCodePoints(2))
         assertTrue(statusGraphemes("🇺🇸👨‍👩‍👧‍👦👍🏽").size == 3)

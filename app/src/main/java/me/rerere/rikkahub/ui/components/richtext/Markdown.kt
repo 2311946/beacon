@@ -48,8 +48,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextGeometricTransform
 import me.rerere.rikkahub.ui.theme.LocalChatTheme
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -239,24 +239,26 @@ fun MarkdownBlock(
 @Composable
 private fun rememberNovelTextStyles(): NovelTextStyles {
     val theme = LocalChatTheme.current
-    val dark = LocalDarkMode.current
-    // 经典浅色采用黑/深灰；深色反转亮度，避免黑字落在暗色气泡上。
-    return remember(theme, dark) {
+    // 按小说模式指定的固定灰阶拉开层次，避免主题浅色 token 抹平区别。
+    return remember(theme) {
         NovelTextStyles(
             dialogue = SpanStyle(
-                color = theme.novelDialogueColor ?: if (dark) Color(0xFFF5F5F5) else Color.Black,
+                color = theme.novelDialogueColor ?: Color(0xFFFFB6C1),
                 fontWeight = FontWeight.Bold,
             ),
             action = SpanStyle(
-                color = theme.novelActionColor ?: if (dark) Color(0xFFB0B0B8) else Color(0xFF66666E),
+                color = theme.novelActionColor ?: Color(0xFF9E9E9E),
                 fontStyle = FontStyle.Italic,
+                // CJK 字体可能没有斜体字形，显式倾斜保证中文动作也有明显区别。
+                textGeometricTransform = TextGeometricTransform(skewX = 0.2f),
             ),
             narration = SpanStyle(
-                color = theme.novelNarrationColor ?: if (dark) Color(0xFFD0D0D6) else Color(0xFF44444C),
+                color = theme.novelNarrationColor ?: Color(0xFF808080),
             ),
             thought = SpanStyle(
-                color = theme.novelThoughtColor ?: if (dark) Color(0xFF93939E) else Color(0xFF85858E),
+                color = theme.novelThoughtColor ?: Color(0xFF666666),
                 fontStyle = FontStyle.Italic,
+                textGeometricTransform = TextGeometricTransform(skewX = 0.2f),
             ),
         )
     }

@@ -122,8 +122,10 @@ class GroupChatService(
     }
 
     fun regenerate(groupId: Uuid, message: UIMessage) {
-        val convId = currentGroup(groupId)?.conversationId ?: return
+        if (currentGroup(groupId) == null) return
         start(groupId) {
+            val group = currentGroup(groupId) ?: return@start
+            val convId = ensureConversation(group)
             withConversation(convId) {
                 val current = chatService.getConversation(convId)
                     ?.currentMessages?.firstOrNull { it.id == message.id } ?: error("原消息已不存在或不在当前分支")
@@ -135,7 +137,9 @@ class GroupChatService(
                     return@withConversation
                 }
                 if (current.role != MessageRole.ASSISTANT) return@withConversation
-                val speakerId = chatService.getConversation(convId)?.config?.speakerMap?.get(current.id)
+                val speakerId = checkNotNull(chatService.getConversation(convId)?.config?.speakerMap?.get(current.id)) {
+                    "找不到原消息的群聊发言人记录，无法重新生成；不会改用单聊角色"
+                }
                 setSpeaker(speakerId)
                 chatService.regenerateAtMessage(convId, message.id, speakerId)
                 try {
@@ -188,7 +192,10 @@ class GroupChatService(
     private suspend fun ensureConversation(group: GroupChat): Uuid {
         val settings = settingsStore.awaitLoaded()
         val current = settings.groupChats.firstOrNull { it.id == group.id } ?: error("群聊已删除")
-        current.conversationId?.let { return it }
+        current.conversationId?.let { conversationId ->
+            check(chatService.getConversation(conversationId) != null) { "群聊关联会话不存在，请恢复备份或新建群聊" }
+            return conversationId
+        }
         val id = Uuid.random()
         val conversation = Conversation.ofId(id, assistantId = current.memberIds.firstOrNull() ?: settings.assistantId)
             .let { it.copy(title = current.name, config = (it.config ?: ConversationConfig()).copy(isGroupChat = true)) }

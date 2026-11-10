@@ -55,6 +55,7 @@ import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.hasUnansweredAutonomousWakeup
+import me.rerere.rikkahub.data.model.withDeliveredWakeup
 import me.rerere.rikkahub.data.model.lastWakeupIdleActivityAt
 import me.rerere.rikkahub.data.model.isRealWakeupUserActivity
 import kotlinx.datetime.toInstant
@@ -441,6 +442,14 @@ class ChatService(
             create = { newConversation(session.id) },
         )
         resumeChatImageGeneration(session)
+        val settings = settingsStore.awaitLoaded()
+        if (session.state.value.config?.isGroupChat != true &&
+            settings.groupChats.any { it.conversationId == session.id }) {
+            session.updateMetadata(
+                transform = { it.bindConfig(settings) },
+                persist = conversationRepo::updateConversationConfig,
+            )
+        }
         if (session.state.value.config?.isGroupChat == true) syncGroupTitle(session)
     }
 
@@ -591,6 +600,35 @@ class ChatService(
             session.getJob() != null || session.state.value.isAwaitingToolApproval ||
                 session.messageQueue.state.value.messages.isNotEmpty()
         }
+    }
+
+    /** 决策已经生成的联系正文直接作为助手消息落库，不再进行第二次模型请求。 */
+    internal suspend fun deliverWakeupMessage(
+        conversationId: Uuid,
+        assistantId: Uuid,
+        expectedLastMessageId: Uuid?,
+        text: String,
+        metadata: kotlinx.serialization.json.JsonObject,
+    ): String? = withLoadedSession(conversationId, createIfMissing = false) { session ->
+        val settings = settingsStore.awaitLoaded()
+        if (text.isBlank() || settings.groupChats.any { it.conversationId == conversationId }) return@withLoadedSession null
+        val message = UIMessage.assistant(text).copy(
+            parts = listOf(UIMessagePart.Text(text, metadata)),
+            modelId = settings.getChatModelOf(session.state.value)?.id,
+        )
+        val accepted = synchronized(session) {
+            if (session.getJob() != null || session.state.value.isAwaitingToolApproval ||
+                session.messageQueue.state.value.messages.isNotEmpty()) {
+                false
+            } else {
+                session.tryUpdate { it.withDeliveredWakeup(message, assistantId, expectedLastMessageId) } != null
+            }
+        }
+        if (!accepted) return@withLoadedSession null
+        withContext(NonCancellable) { session.flush() }
+        // 已经落库的消息不应因 UI 完成事件的背压/调用方取消而被报告为未交付。
+        appScope.launch { _generationDoneFlow.emit(conversationId) }
+        text
     }
 
     /** 后台唤醒不得排到新用户消息后面；检查和入队在同一会话锁内完成。 */
@@ -949,10 +987,15 @@ class ChatService(
             } else history
 
             // 群聊增强：场景说明 + 单聊上下文注入
-            // 1. 场景说明（始终注入）：告诉角色这是群聊，列出成员，要求口语化
+            // 1. 场景说明（始终注入）：告诉角色这是群聊，列出成员；回复风格由群聊 SYSTEM 提示词控制
             // 2. 单聊上下文（可选）：注入该角色与用户的最近私聊消息
+            val groupChat = if (speakerAssistantId != null) {
+                settings.groupChats.firstOrNull { it.conversationId == conversationId }
+            } else null
+            val groupSystemPrompt = if (speakerAssistantId != null) {
+                (groupChat?.resolved(settings.groupChatDefaults) ?: settings.groupChatDefaults).systemPrompt
+            } else ""
             val bridgeContext = if (speakerAssistantId != null) {
-                val groupChat = settings.groupChats.firstOrNull { it.conversationId == conversationId }
                 val userName = settings.displaySetting.userNickname.ifBlank { "用户" }
                 val speakerName = settings.assistants
                     .firstOrNull { it.id == speakerAssistantId }
@@ -967,14 +1010,11 @@ class ChatService(
                     } ?: emptyList()
                 val sceneInstruction = buildString {
                     append("[群聊场景说明]\n")
-                    append("你现在在一个群聊中，请像真人发消息一样回复。")
+                    append("你现在正在以当前角色身份参与群聊。")
                     if (memberNames.isNotEmpty()) {
                         append("群里有：${memberNames.joinToString("、")}，还有${userName}。")
                     }
                     append("\n要求：\n")
-                    append("- 说话简短、口语化，像在微信群里打字\n")
-                    append("- 禁止写旁白、动作描写（*动作*）、心理活动或第三人称叙述\n")
-                    append("- 直接说话，不要加引号或书名号包裹对白\n")
                     append("- 称呼用户为「${userName}」\n")
                     append("- 可以接话、吐槽、提问，保持群聊的自然节奏\n")
                     append("[场景说明结束]")
@@ -1057,6 +1097,7 @@ class ChatService(
                 settings,
                 effectiveConversation,
                 chatContext = bridgeContext,
+                groupSystemPrompt = groupSystemPrompt,
                 isVoiceCallActive = {
                     replyCallId != null && activeVoiceCalls[conversationId] == replyCallId
                 },

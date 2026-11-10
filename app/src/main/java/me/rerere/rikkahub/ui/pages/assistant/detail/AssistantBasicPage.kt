@@ -214,6 +214,12 @@ internal fun AssistantBasicContent(
                 supportingContent = { Text(stringResource(R.string.assistant_page_use_assistant_avatar_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_use_assistant_avatar)) },
             )
+            switchItem(
+                checked = assistant.enableCalendar,
+                onCheckedChange = { onUpdate(assistant.copy(enableCalendar = it)) },
+                headlineContent = { Text("日历行程") },
+                supportingContent = { Text("开启后才会为该角色生成日程；关闭后不再生成，已有日程保留。") },
+            )
         }
 
         CardGroup {

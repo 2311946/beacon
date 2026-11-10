@@ -99,6 +99,36 @@ class ConversationConfigTest {
     }
 
     @Test
+    fun `assistant edits preserve group identity all speakers and message nodes`() {
+        val message = me.rerere.ai.ui.UIMessage.assistant("群内回复")
+        val group = conversation().bindConfig(settings()).copy(
+            messageNodes = listOf(message.toMessageNode()),
+            config = ConversationConfig(
+                isGroupChat = true, speakerMap = mapOf(message.id to assistant.id), showAssistantStatus = false,
+            ),
+        )
+        val edited = group.withAssistantUpdate(assistant.copy(chatModelId = modelB.id), settings())
+        assertEquals(group.id, edited.id)
+        assertSame(group.messageNodes, edited.messageNodes)
+        assertTrue(edited.config!!.isGroupChat)
+        assertEquals(group.config!!.speakerMap, edited.config!!.speakerMap)
+        assertFalse(edited.showAssistantStatus)
+        assertEquals(modelB.id, edited.config!!.chatModelId)
+    }
+
+    @Test
+    fun `binding repairs only explicitly linked group without recreating history`() {
+        val linked = conversation().bindConfig(settings())
+        val unrelated = conversation().bindConfig(settings())
+        val withGroup = settings().copy(groupChats = listOf(GroupChat(conversationId = linked.id)))
+        val repaired = linked.bindConfig(withGroup)
+        assertEquals(linked.id, repaired.id)
+        assertSame(linked.messageNodes, repaired.messageNodes)
+        assertTrue(repaired.config!!.isGroupChat)
+        assertFalse(unrelated.bindConfig(withGroup).config!!.isGroupChat)
+    }
+
+    @Test
     fun `unstarted conversation follows the assistant`() {
         val conversation = conversation()
 

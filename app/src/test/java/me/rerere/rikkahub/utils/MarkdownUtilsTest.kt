@@ -4,12 +4,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
 import me.rerere.bettertext.markdown.MarkdownBlock
 import me.rerere.bettertext.markdown.MarkdownDocument
 import me.rerere.bettertext.markdown.MarkdownInline
 import me.rerere.bettertext.markdown.parseMarkdown
 import me.rerere.rikkahub.ui.components.richtext.NovelTextStyles
 import me.rerere.rikkahub.ui.components.richtext.applyNovelTextStyles
+import me.rerere.rikkahub.ui.theme.appearance
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
@@ -28,7 +30,15 @@ class MarkdownUtilsTest {
         val document = MarkdownDocument("original source", listOf(MarkdownBlock.Paragraph(inlines.toList())))
         val rendered = applyNovelTextStyles(document, novelStyles)
         assertEquals(document.source, rendered.source)
-        return (rendered.blocks.single() as MarkdownBlock.Paragraph).content
+        return paragraphInlines(rendered.blocks)
+    }
+
+    private fun paragraphInlines(blocks: List<MarkdownBlock>): List<MarkdownInline> = blocks.flatMap {
+        when (it) {
+            is MarkdownBlock.Paragraph -> it.content
+            is MarkdownBlock.Container -> paragraphInlines(it.children)
+            else -> emptyList()
+        }
     }
 
     private fun runs(nodes: List<MarkdownInline>, inherited: SpanStyle = SpanStyle()): List<Pair<String, SpanStyle>> =
@@ -101,12 +111,50 @@ class MarkdownUtilsTest {
         val styled = applyNovelTextStyles(parsed, novelStyles)
         assertEquals(source, styled.source)
         val before = (parsed.blocks.single() as MarkdownBlock.Paragraph).content
-        val after = (styled.blocks.single() as MarkdownBlock.Paragraph).content
+        val after = paragraphInlines(styled.blocks)
         val protectedBefore = before.filter { it is MarkdownInline.Code || it is MarkdownInline.Link || it is MarkdownInline.Image }
         val protectedAfter = after.filter { it is MarkdownInline.Code || it is MarkdownInline.Link || it is MarkdownInline.Image }
         assertEquals(3, protectedBefore.size)
         assertEquals(protectedBefore, protectedAfter)
         assertTrue(runs(after).any { it.first.contains("轻轻点头") && it.second.color == Color.Gray })
+    }
+
+    @Test
+    fun `thought and translation paragraphs are indented without changing text`() {
+        val source = "旁白（心理活动）后文(translation)"
+        val document = MarkdownDocument(source, listOf(MarkdownBlock.Paragraph(listOf(MarkdownInline.Text(source)))))
+        val rendered = applyNovelTextStyles(document, novelStyles)
+        val container = rendered.blocks.single() as MarkdownBlock.Container
+        val paragraphs = container.children.map { it as MarkdownBlock.Paragraph }
+        assertEquals(4, paragraphs.size)
+        assertEquals(source, rendered.source)
+        assertEquals(source, runs(paragraphInlines(rendered.blocks)).joinToString("") { it.first })
+        listOf(1, 3).forEach { index ->
+            assertEquals(androidx.compose.ui.text.style.TextIndent(1.5.em, 1.5.em), paragraphs[index].style?.textIndent)
+            assertTrue(runs(paragraphs[index].content).all { it.second.fontStyle == FontStyle.Italic })
+        }
+        assertEquals(null, paragraphs.first().style?.textIndent)
+    }
+
+    @Test
+    fun `kuromi novel grayscale uses the requested high separation palette`() {
+        val theme = me.rerere.rikkahub.ui.theme.BuiltInChatTheme.KUROMI.appearance()
+        assertEquals(Color(0xFFB388FF), theme.novelDialogueColor)
+        assertEquals(Color(0xFF9E9E9E), theme.novelActionColor)
+        assertEquals(Color(0xFF808080), theme.novelNarrationColor)
+        assertEquals(Color(0xFF666666), theme.novelThoughtColor)
+    }
+
+    @Test
+    fun `novel category color and weight override explicit inline style`() {
+        val rendered = runs(styledInlines(MarkdownInline.Styled(
+            SpanStyle(color = Color.Red, fontWeight = FontWeight.Normal),
+            listOf(MarkdownInline.Text("「对话」（心理）")),
+        )))
+        assertEquals(Color.Magenta, rendered.first().second.color)
+        assertEquals(FontWeight.Bold, rendered.first().second.fontWeight)
+        assertEquals(Color.LightGray, rendered.last().second.color)
+        assertEquals(FontStyle.Italic, rendered.last().second.fontStyle)
     }
 
     @Test

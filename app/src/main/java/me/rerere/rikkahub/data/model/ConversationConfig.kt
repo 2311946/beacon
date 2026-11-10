@@ -78,8 +78,13 @@ fun Conversation.withAssistantUpdate(updated: Assistant, settings: Settings): Co
         this
     } else {
         copy(
-            config = updated.toConversationConfig().copy(
-                showAssistantStatus = config.showAssistantStatus,
+            config = config.copy(
+                chatModelId = updated.chatModelId,
+                reasoningLevel = updated.reasoningLevel,
+                enableWebSearch = updated.enableWebSearch,
+                mcpServers = updated.mcpServers,
+                workspaceId = updated.workspaceId,
+                enabledSkills = updated.enabledSkills,
                 builtInSearch = if (updated.chatModelId == config.chatModelId) {
                     config.builtInSearch
                 } else {
@@ -139,6 +144,10 @@ fun Settings.getChatModelOf(conversation: Conversation): Model? {
  * 只有固定的模型被删除时才改为固定助手当前的模型，之后不再跟着助手变。
  */
 fun Conversation.bindConfig(settings: Settings): Conversation {
+    // 群聊关联是持久化身份依据；修复旧配置更新丢失的标记，不创建/迁移任何消息。
+    if (config?.isGroupChat != true && settings.groupChats.any { it.conversationId == id }) {
+        return copy(config = (config ?: ConversationConfig()).copy(isGroupChat = true)).bindConfig(settings)
+    }
     val model = settings.getChatModelOf(this)
     val builtInSearch = model != null && BuiltInTools.Search in model.tools
     val config = config
