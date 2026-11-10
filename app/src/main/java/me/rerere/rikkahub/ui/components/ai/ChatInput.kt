@@ -153,7 +153,11 @@ fun ChatInput(
     onManageStickers: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val chatTheme = me.rerere.rikkahub.ui.theme.LocalChatTheme.current
+    val containerColor = chatTheme.inputColor ?: MaterialTheme.colorScheme.surfaceContainerLow
+    val inputDisplaySetting = if (chatTheme.inputColor != null) {
+        settings.displaySetting.copy(enableBlurEffect = false)
+    } else settings.displaySetting
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -164,7 +168,7 @@ fun ChatInput(
     }
 
     val themeShape = MaterialTheme.shapes.largeIncreased
-    val containerShape = RoundedCornerShape(
+    val containerShape = chatTheme.bubbleCorner?.let { RoundedCornerShape(it) } ?: RoundedCornerShape(
         topStart = themeShape.topStart,
         topEnd = themeShape.topEnd,
         bottomEnd = themeShape.bottomEnd,
@@ -223,7 +227,7 @@ fun ChatInput(
     val scrimColor = MaterialTheme.colorScheme.background
     val imeInsets = WindowInsets.ime
     Surface(
-        color = Color.Transparent,
+        color = chatTheme.bottomBarColor ?: Color.Transparent,
         modifier = Modifier.drawWithCache {
             val brush = Brush.verticalGradient(
                 colors = listOf(scrimColor.copy(alpha = 0f), scrimColor),
@@ -254,14 +258,15 @@ fun ChatInput(
                     .clip(containerShape)
                     .chatInputHaze(
                         hazeState = hazeState,
-                        displaySetting = settings.displaySetting,
+                        displaySetting = inputDisplaySetting,
                         containerColor = containerColor,
                         shape = containerShape,
                     ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else containerColor,
+                border = BorderStroke(1.dp, chatTheme.accentColor?.copy(alpha = 0.5f)
+                    ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = if (inputDisplaySetting.enableBlurEffect) Color.Transparent else containerColor,
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

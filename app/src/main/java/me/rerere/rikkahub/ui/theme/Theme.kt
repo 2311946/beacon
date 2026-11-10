@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.theme
 import android.os.Build
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -16,6 +18,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -33,6 +37,76 @@ val LocalDarkMode = compositionLocalOf { false }
 
 private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
 
+/** 界面皮肤独立于 Material You 配色设置，未知 ID 安全回退经典。 */
+enum class BuiltInChatTheme(val id: String, val title: String, val description: String) {
+    CLASSIC("classic", "经典", "保留当前样式，跟随原有 Material You 和外观设置"),
+    KUROMI("kuromi", "库洛米 Kuromi", "暗黑与粉紫的小恶魔风格，固定深色、16dp 圆角"),
+    ;
+
+    companion object {
+        fun fromId(id: String): BuiltInChatTheme = entries.firstOrNull { it.id == id } ?: CLASSIC
+    }
+}
+
+/** null 表示沿用经典组件原值；后续主题只需提供自己的外观 token。 */
+data class ChatThemeAppearance(
+    val colorScheme: ColorScheme? = null,
+    val userBubbleColors: List<Color> = emptyList(),
+    val assistantBubbleColor: Color? = null,
+    val assistantBubbleBorder: Color? = null,
+    val bubbleCorner: Dp? = null,
+    val backgroundColor: Color? = null,
+    val backgroundImage: String? = null,
+    val topBarColor: Color? = null,
+    val bottomBarColor: Color? = null,
+    val inputColor: Color? = null,
+    val textColor: Color? = null,
+    val secondaryTextColor: Color? = null,
+    val accentColor: Color? = null,
+    val forceAssistantBubble: Boolean = false,
+)
+
+private val KuromiColorScheme = darkColorScheme(
+    primary = Color(0xFFB388FF), onPrimary = Color(0xFF1A1A2E),
+    primaryContainer = Color(0xFF2D1B4E), onPrimaryContainer = Color.White,
+    secondary = Color(0xFFFF69B4), onSecondary = Color(0xFF1A1A2E),
+    secondaryContainer = Color(0xFF4A2875), onSecondaryContainer = Color.White,
+    tertiary = Color(0xFFFFB6C1), onTertiary = Color(0xFF1A1A2E),
+    tertiaryContainer = Color(0xFF2D1B4E), onTertiaryContainer = Color.White,
+    background = Color(0xFF0D0D1A), onBackground = Color.White,
+    surface = Color(0xFF0D0D1A), onSurface = Color.White,
+    surfaceVariant = Color(0xFF2D1B4E), onSurfaceVariant = Color(0xFFFFB6C1),
+    surfaceTint = Color(0xFFB388FF),
+    surfaceDim = Color(0xFF0D0D1A), surfaceBright = Color(0xFF2D1B4E),
+    surfaceContainerLowest = Color(0xFF0D0D1A), surfaceContainerLow = Color(0xFF1E1E2E),
+    surfaceContainer = Color(0xFF1A1A2E), surfaceContainerHigh = Color(0xFF1A1A2E),
+    surfaceContainerHighest = Color(0xFF2D1B4E),
+    outline = Color(0xFFB388FF), outlineVariant = Color(0xFF4A2875),
+    inverseSurface = Color(0xFFFFB6C1), inverseOnSurface = Color(0xFF1A1A2E),
+    inversePrimary = Color(0xFF4A2875),
+)
+
+private val ClassicAppearance = ChatThemeAppearance()
+private val KuromiAppearance = ChatThemeAppearance(
+    colorScheme = KuromiColorScheme,
+    userBubbleColors = listOf(Color(0xFF2D1B4E), Color(0xFF4A2875)),
+    assistantBubbleColor = Color(0xFF1A1A2E),
+    assistantBubbleBorder = Color(0xFFB388FF),
+    bubbleCorner = 16.dp,
+    backgroundColor = Color(0xFF0D0D1A),
+    topBarColor = Color(0xFF0D0D1A), bottomBarColor = Color(0xFF0D0D1A),
+    inputColor = Color(0xFF1E1E2E),
+    textColor = Color.White, secondaryTextColor = Color(0xFFFFB6C1),
+    accentColor = Color(0xFFB388FF), forceAssistantBubble = true,
+)
+
+fun BuiltInChatTheme.appearance(): ChatThemeAppearance = when (this) {
+    BuiltInChatTheme.CLASSIC -> ClassicAppearance
+    BuiltInChatTheme.KUROMI -> KuromiAppearance
+}
+
+val LocalChatTheme = compositionLocalOf { ClassicAppearance }
+
 @Serializable
 enum class ColorMode {
     SYSTEM,
@@ -47,7 +121,8 @@ fun RikkahubTheme(
 ) {
     val settings by rememberUserSettingsState()
 
-    val darkTheme = when (colorMode) {
+    val chatTheme = BuiltInChatTheme.fromId(settings.displaySetting.chatThemeId).appearance()
+    val darkTheme = chatTheme.colorScheme != null || when (colorMode) {
         ColorMode.SYSTEM -> isSystemInDarkTheme()
         ColorMode.LIGHT -> false
         ColorMode.DARK -> true
@@ -55,6 +130,7 @@ fun RikkahubTheme(
     val amoledDarkMode by rememberAmoledDarkMode()
 
     val colorScheme = when {
+        chatTheme.colorScheme != null -> chatTheme.colorScheme
         settings.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -65,8 +141,8 @@ fun RikkahubTheme(
             theme.getColorScheme(dark = darkTheme)
         }
     }
-    val colorSchemeConverted = remember(darkTheme, amoledDarkMode, colorScheme) {
-        if (darkTheme && amoledDarkMode) {
+    val colorSchemeConverted = remember(darkTheme, amoledDarkMode, colorScheme, chatTheme) {
+        if (chatTheme.colorScheme == null && darkTheme && amoledDarkMode) {
             colorScheme.copy(
                 background = AMOLED_DARK_BACKGROUND,
                 surface = AMOLED_DARK_BACKGROUND,
@@ -100,6 +176,7 @@ fun RikkahubTheme(
     }
 
     CompositionLocalProvider(
+        LocalChatTheme provides chatTheme,
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors,
         LocalOverscrollFactory provides null,

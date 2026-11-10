@@ -697,7 +697,9 @@ private fun TopBar(
     var showTitleMenu by remember(assistant.id, conversation.id) { mutableStateOf(false) }
 
     TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = me.rerere.rikkahub.ui.theme.LocalChatTheme.current.topBarColor ?: Color.Transparent,
+        ),
         navigationIcon = {
             if (!bigScreen) {
                 IconButton(
@@ -742,7 +744,8 @@ private fun TopBar(
                             text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
-                            color = LocalContentColor.current.copy(0.65f),
+                            color = me.rerere.rikkahub.ui.theme.LocalChatTheme.current.secondaryTextColor
+                                ?: LocalContentColor.current.copy(0.65f),
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 8.sp,
                             )

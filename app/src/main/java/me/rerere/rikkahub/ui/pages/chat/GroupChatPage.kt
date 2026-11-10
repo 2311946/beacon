@@ -169,7 +169,9 @@ fun GroupChatPage(
             topBar = {
                 Column {
                     TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = me.rerere.rikkahub.ui.theme.LocalChatTheme.current.topBarColor ?: Color.Transparent,
+                    ),
                     title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

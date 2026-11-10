@@ -7,6 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import me.rerere.rikkahub.ui.theme.LocalChatTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -466,6 +469,7 @@ private fun MessagePartsBlock(
     val hapticFeedback = LocalHapticFeedback.current
     val settings = LocalSettings.current
     val partsState by rememberUpdatedState(parts)
+    val chatTheme = LocalChatTheme.current
     val chatImageMarker = parts.filterIsInstance<UIMessagePart.Text>().firstOrNull { text ->
         (text.metadata?.get("beacon_event") as? JsonPrimitive)?.content == me.rerere.rikkahub.data.model.ChatImageGeneration.EVENT
     }
@@ -641,7 +645,7 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             } else {
-                                if (settings.displaySetting.showAssistantBubble) {
+                                if (chatTheme.forceAssistantBubble || settings.displaySetting.showAssistantBubble) {
                                     ChatMessageBubble(
                                         role = role,
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
@@ -778,17 +782,31 @@ private fun ChatMessageBubble(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressProgress by animatePressProgress(interactionSource)
-    val corner = lerp(BubbleCorner, BubblePressedCorner, pressProgress)
-    val shape = if (role == MessageRole.USER) {
+    val chatTheme = LocalChatTheme.current
+    val corner = chatTheme.bubbleCorner ?: lerp(BubbleCorner, BubblePressedCorner, pressProgress)
+    val shape = if (chatTheme.bubbleCorner != null) {
+        RoundedCornerShape(corner)
+    } else if (role == MessageRole.USER) {
         RoundedCornerShape(topStart = corner, topEnd = BubbleTailCorner, bottomEnd = corner, bottomStart = corner)
     } else {
         RoundedCornerShape(topStart = BubbleTailCorner, topEnd = corner, bottomEnd = corner, bottomStart = corner)
     }
-    val contentColor = contentColorFor(color)
+    val contentColor = chatTheme.textColor ?: contentColorFor(color)
+    val bubbleBackground = when {
+        role == MessageRole.USER && chatTheme.userBubbleColors.isNotEmpty() ->
+            Modifier.background(Brush.horizontalGradient(chatTheme.userBubbleColors))
+        role == MessageRole.ASSISTANT && chatTheme.assistantBubbleColor != null ->
+            Modifier.background(chatTheme.assistantBubbleColor)
+        else -> Modifier.background(color)
+    }
+    val bubbleBorder = if (role == MessageRole.ASSISTANT && chatTheme.assistantBubbleBorder != null) {
+        Modifier.border(1.dp, chatTheme.assistantBubbleBorder, shape)
+    } else Modifier
     Box(
         modifier = modifier
             .clipDrawing(shape)
-            .background(color)
+            .then(bubbleBackground)
+            .then(bubbleBorder)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(interactionSource = interactionSource, indication = ripple(), onClick = onClick)

@@ -81,6 +81,7 @@ import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
+import me.rerere.rikkahub.ui.theme.BuiltInChatTheme
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.joinQQGroup
@@ -205,6 +206,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     }
+                    item(
+                        onClick = { navController.navigate(Screen.SettingPreferencesTheme) },
+                        leadingContent = { CardGroupIcon(HugeIcons.AiMagic, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(BuiltInChatTheme.fromId(settings.displaySetting.chatThemeId).title) },
+                        headlineContent = { Text("主题") },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingPreferences) },
                         leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },

@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +33,8 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.theme.BuiltInChatTheme
+import me.rerere.rikkahub.ui.theme.appearance
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -58,8 +67,46 @@ fun SettingPreferencesThemePage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item("builtInThemes") {
+                CardGroup(title = { Text("内置主题") }) {
+                    BuiltInChatTheme.entries.forEach { theme ->
+                        item(
+                            onClick = {
+                                vm.updateSettings { latest ->
+                                    latest.copy(displaySetting = latest.displaySetting.copy(chatThemeId = theme.id))
+                                }
+                            },
+                            headlineContent = { Text(theme.title) },
+                            supportingContent = { Text(theme.description) },
+                            leadingContent = {
+                                val palette = theme.appearance()
+                                val colors = palette.userBubbleColors.ifEmpty {
+                                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    (colors + (palette.accentColor ?: MaterialTheme.colorScheme.tertiary)).forEach { color ->
+                                        Box(Modifier.size(12.dp).background(color, CircleShape))
+                                    }
+                                }
+                            },
+                            trailingContent = {
+                                RadioButton(
+                                    selected = BuiltInChatTheme.fromId(settings.displaySetting.chatThemeId) == theme,
+                                    onClick = null,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
             item {
-                CardGroup {
+                CardGroup(title = { Text("经典主题配色") }) {
+                    item(
+                        headlineContent = { Text("主题优先级") },
+                        supportingContent = {
+                            Text("库洛米主题优先于 Material You、明暗模式与 AMOLED，并使用深色纯色聊天背景。以下设置会保留，切回经典后恢复生效。")
+                        },
+                    )
                     switchItem(
                         checked = settings.dynamicColor,
                         onCheckedChange = { vm.updateSettings { latest -> latest.copy(dynamicColor = it) } },

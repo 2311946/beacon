@@ -15,6 +15,20 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 
 @Composable
 fun AssistantBackground(setting: Settings, modifier: Modifier) {
+    val theme = me.rerere.rikkahub.ui.theme.LocalChatTheme.current
+    if (theme.backgroundColor != null || theme.backgroundImage != null) {
+        Box(modifier = modifier.fillMaxSize().background(theme.backgroundColor ?: MaterialTheme.colorScheme.background)) {
+            theme.backgroundImage?.let { image ->
+                AsyncImage(
+                    model = image,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        return
+    }
     val assistant = setting.getCurrentAssistant()
     if (assistant.useGradientBackground) {
         MeshGradientBackground(modifier = modifier)

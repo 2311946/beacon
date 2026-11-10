@@ -22,6 +22,10 @@ import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
+import me.rerere.rikkahub.ui.theme.BuiltInChatTheme
+import me.rerere.rikkahub.ui.theme.appearance
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import org.junit.Assert.assertEquals
@@ -65,6 +69,46 @@ class SettingsFieldsTest {
         assertEquals(emptyMap<String, AssistantStatus>(), emptyPreferences().toSettings().assistantStatuses)
         val legacy = JsonInstant.decodeFromString<Settings>("""{"assistantId":"00000000-0000-0000-0000-000000000020"}""")
         assertEquals(emptyMap<String, AssistantStatus>(), legacy.assistantStatuses)
+    }
+
+    @Test
+    fun `legacy and unknown theme selections fall back to classic`() {
+        val legacy = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
+        assertEquals("classic", legacy.chatThemeId)
+        assertEquals(BuiltInChatTheme.CLASSIC, BuiltInChatTheme.fromId("removed-theme"))
+        assertEquals(null, BuiltInChatTheme.CLASSIC.appearance().colorScheme)
+        assertEquals(emptyList<Color>(), BuiltInChatTheme.CLASSIC.appearance().userBubbleColors)
+    }
+
+    @Test
+    fun `theme selection persists without changing classic preferences or assistant data`() {
+        val original = SAMPLE.copy(dynamicColor = true)
+        val selected = original.copy(displaySetting = original.displaySetting.copy(chatThemeId = "kuromi"))
+        val preferences = mutablePreferencesOf().apply { putSettings(selected) }
+        val restored = preferences.toSettings()
+        assertEquals("kuromi", restored.displaySetting.chatThemeId)
+        assertEquals(original.displaySetting, restored.displaySetting.copy(chatThemeId = original.displaySetting.chatThemeId))
+        assertEquals(original, restored.copy(displaySetting = original.displaySetting))
+        val classic = restored.copy(displaySetting = restored.displaySetting.copy(chatThemeId = "classic"))
+        preferences.putSettings(classic, persisted = restored)
+        assertEquals("classic", preferences.toSettings().displaySetting.chatThemeId)
+        assertEquals(true, preferences.toSettings().dynamicColor)
+    }
+
+    @Test
+    fun `kuromi appearance uses specified palette and rounded bubbles`() {
+        val theme = BuiltInChatTheme.KUROMI.appearance()
+        assertEquals(listOf(Color(0xFF2D1B4E), Color(0xFF4A2875)), theme.userBubbleColors)
+        assertEquals(Color(0xFF1A1A2E), theme.assistantBubbleColor)
+        assertEquals(Color(0xFFB388FF), theme.assistantBubbleBorder)
+        assertEquals(Color(0xFF0D0D1A), theme.backgroundColor)
+        assertEquals(Color(0xFF1E1E2E), theme.inputColor)
+        assertEquals(Color.White, theme.textColor)
+        assertEquals(Color(0xFFFFB6C1), theme.secondaryTextColor)
+        assertEquals(16.dp, theme.bubbleCorner)
+        assertEquals(true, theme.forceAssistantBubble)
+        assertEquals(Color(0xFFB388FF), theme.colorScheme?.primary)
+        assertEquals(Color(0xFFFF69B4), theme.colorScheme?.secondary)
     }
 
     @Test
