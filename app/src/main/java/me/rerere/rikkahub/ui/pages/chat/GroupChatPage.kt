@@ -33,6 +33,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -78,6 +84,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import me.rerere.ai.core.MessageRole
@@ -171,7 +180,7 @@ fun GroupChatPage(
             range.any { nodes[it].currentMessage.getTools().any { tool -> tool.isPending } }
         }.map { it.first }.toSet()
     }
-    // 聊天流只提示当前有效总结；归档和失效内容移至群设置的历史总结。
+    // 按钮只标记当前有效摘要；统计收进面板，归档和失效内容仍在群设置。
     val summaryStages = remember(conversation) { conversation?.validGroupSummaryStages().orEmpty() }
     val summaryKeepRecentMessages = (groupChat?.resolved(settings.groupChatDefaults)
         ?: settings.groupChatDefaults).summaryKeepRecentMessages.coerceIn(0, 50)
@@ -182,10 +191,26 @@ fun GroupChatPage(
     val speakerMap = conversation?.config?.speakerMap.orEmpty()
     val generatingState by rememberUpdatedState(isGenerating)
     val lastContentIndex by rememberUpdatedState(
-        nodes.size + summaryStages.size +
-            (if (isGenerating || awaitingManualSpeaker) 1 else 0)
+        nodes.size + (if (isGenerating || awaitingManualSpeaker) 1 else 0)
     )
+    var isRecentScroll by remember(groupId) { mutableStateOf(false) }
     var showSummaryDialog by rememberSaveable(groupId) { mutableStateOf(false) }
+    val summarySnackbarHost = remember(groupId) { SnackbarHostState() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(vm, lifecycle, summarySnackbarHost) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            vm.summaryCompletions.collect {
+                if (summarySnackbarHost.showSnackbar(
+                        message = "群聊总结已更新，原始记录仍保留",
+                        actionLabel = "查看",
+                        duration = SnackbarDuration.Short,
+                    ) == SnackbarResult.ActionPerformed
+                ) {
+                    showSummaryDialog = true
+                }
+            }
+        }
+    }
     var showAttachments by remember(groupId) { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
         inputState = inputState,
@@ -196,9 +221,16 @@ fun GroupChatPage(
     LaunchedEffect(nodes) {
         selectionState.selectedItems.retainAll(nodes.map { it.id }.toSet())
     }
-    LaunchedEffect(groupId, nodes.size, summaryStages.size, isSummarizing) {
-        if (!overviewVisible && !selectionState.selecting && exportConversation == null && (nodes.isNotEmpty() || summaryStages.isNotEmpty())) {
+    LaunchedEffect(groupId, nodes.size) {
+        if (!overviewVisible && !selectionState.selecting && exportConversation == null && nodes.isNotEmpty()) {
             listState.requestScrollToItem(lastContentIndex)
+        }
+    }
+    LaunchedEffect(groupId, listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) isRecentScroll = true
+        else {
+            kotlinx.coroutines.delay(1500)
+            isRecentScroll = false
         }
     }
     ImeLazyListAutoScroller(lazyListState = listState,
@@ -238,6 +270,7 @@ fun GroupChatPage(
         AssistantBackground(setting = settings, modifier = Modifier.hazeSource(hazeState))
         Scaffold(
             containerColor = Color.Transparent,
+            snackbarHost = { SnackbarHost(summarySnackbarHost) },
             topBar = {
                 Column {
                     TopAppBar(
@@ -299,9 +332,23 @@ fun GroupChatPage(
                                 showAttachments = false
                                 showSummaryDialog = true
                             },
-                            enabled = canSummarize,
+                            enabled = groupChat != null && conversation != null,
+                            modifier = Modifier.semantics {
+                                contentDescription = when {
+                                    isSummarizing -> "正在总结，查看总结状态"
+                                    summaryStages.isNotEmpty() -> "已有有效总结，查看总结"
+                                    else -> "总结群聊"
+                                }
+                            },
                         ) {
-                            Text(if (isSummarizing) "正在总结" else "总结")
+                            if (isSummarizing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.size(4.dp))
+                            }
+                            Text(if (!isSummarizing && summaryStages.isNotEmpty()) "总结 ✓" else "总结")
                         }
                         IconButton(onClick = { navController.navigate(Screen.GroupChatSettings(groupId)) }) {
                             Icon(HugeIcons.Settings03, contentDescription = "群聊设置")
@@ -506,14 +553,6 @@ fun GroupChatPage(
                             }
                             }
                         }
-                        itemsIndexed(summaryStages, key = { _, stage -> "summary-${stage.id}" }) { _, stage ->
-                            Text(
-                                text = "已总结 · ${stage.sourceMessageIds.size}条消息 · ${stage.topics.size}个主题",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
-                            )
-                        }
                         if (isSummarizing) {
                             item(key = "summarizing") {
                                 Row(
@@ -617,6 +656,14 @@ fun GroupChatPage(
                             modifier = Modifier.fillMaxWidth().padding(8.dp),
                         )
                     }
+                    MessageJumper(
+                        show = isRecentScroll && !listState.isScrollInProgress &&
+                            settings.displaySetting.showMessageJumper && !LocalScrollCaptureInProgress.current &&
+                            !overviewVisible && !currentSelecting && currentExportConversation == null,
+                        onLeft = settings.displaySetting.messageJumperOnLeft,
+                        scope = scope,
+                        state = listState,
+                    )
                     ErrorCardsDisplay(
                         errors = errors,
                         onDismissError = vm::dismissError,
@@ -689,6 +736,12 @@ fun GroupChatPage(
             GroupSummaryDialog(
                 defaultKeepRecentMessages = summaryKeepRecentMessages,
                 canSummarize = canSummarize,
+                isSummarizing = isSummarizing,
+                summaryStages = summaryStages,
+                onViewHistory = {
+                    showSummaryDialog = false
+                    navController.navigate(Screen.GroupChatSettings(groupId))
+                },
                 onDismiss = { showSummaryDialog = false },
                 onSummarize = { additionalPrompt, keepRecentMessages ->
                     if (vm.summarize(additionalPrompt, keepRecentMessages)) {
@@ -711,6 +764,9 @@ fun GroupChatPage(
 private fun GroupSummaryDialog(
     defaultKeepRecentMessages: Int,
     canSummarize: Boolean,
+    isSummarizing: Boolean,
+    summaryStages: List<GroupSummaryStage>,
+    onViewHistory: () -> Unit,
     onDismiss: () -> Unit,
     onSummarize: (String, Int) -> Unit,
 ) {
@@ -728,6 +784,23 @@ private fun GroupSummaryDialog(
                     "按主题生成阶段总结，仅供当前会话后续接话参考，不会删除原始聊天记录。总结会调用模型并产生相应费用。",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                CardGroup {
+                    item(
+                        headlineContent = { Text(if (isSummarizing) "正在总结…" else "当前总结") },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(if (summaryStages.isEmpty()) "暂无有效总结" else
+                                    "覆盖 ${summaryStages.flatMap { it.sourceMessageIds }.distinct().size} 条消息 · ${summaryStages.sumOf { it.topics.size }} 个主题 · ${summaryStages.size} 个阶段")
+                                Text("仅统计当前有效摘要；最近未纳入总结的消息仍以原文参与接话。")
+                            }
+                        },
+                    )
+                    item(
+                        onClick = onViewHistory,
+                        headlineContent = { Text("查看历史总结") },
+                        supportingContent = { Text("前往群聊设置，查看主题正文、归档及失效记录。") },
+                    )
+                }
                 CardGroup {
                     formItem(headlineContent = { Text("附加主题重点（可选）") }) {
                         OutlinedTextField(
@@ -768,7 +841,7 @@ private fun GroupSummaryDialog(
                 enabled = canSummarize,
             ) { Text("开始总结") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
 }
 

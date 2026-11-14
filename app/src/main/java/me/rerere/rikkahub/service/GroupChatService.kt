@@ -54,6 +54,8 @@ class GroupChatService(
 
     internal fun state(groupId: Uuid): StateFlow<GroupChatTaskState> = task(groupId).state
 
+    internal fun summaryCompletions(groupId: Uuid) = task(groupId).summaryCompletions
+
     private fun currentGroup(groupId: Uuid): GroupChat? =
         settingsStore.settingsFlow.value.groupChats.firstOrNull { it.id == groupId }
 
@@ -82,17 +84,19 @@ class GroupChatService(
     fun summarize(groupId: Uuid, additionalPrompt: String, keepRecentMessages: Int): Boolean {
         val conversationId = currentGroup(groupId)?.conversationId ?: return false
         return start(groupId) {
-            withConversation(conversationId) {
-                setSummarizing(true)
-                try {
-                    chatService.summarizeGroupConversation(conversationId, additionalPrompt, keepRecentMessages)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    chatService.addError(e, conversationId, title = "群聊总结失败，原始记录已保留")
-                } finally {
-                    setSummarizing(false)
+            setSummarizing(true)
+            try {
+                withConversation(conversationId) {
+                    runSummary(conversationId) {
+                        chatService.summarizeGroupConversation(conversationId, additionalPrompt, keepRecentMessages)
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                chatService.addError(e, conversationId, title = "群聊总结失败，原始记录已保留")
+            } finally {
+                setSummarizing(false)
             }
         }
     }
@@ -103,7 +107,9 @@ class GroupChatService(
         if (!config.autoSummaryEnabled) return
         setSummarizing(true)
         try {
-            chatService.summarizeGroupConversation(convId, "", config.summaryKeepRecentMessages, automatic = true)
+            runSummary(convId) {
+                chatService.summarizeGroupConversation(convId, "", config.summaryKeepRecentMessages, automatic = true)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

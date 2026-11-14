@@ -354,6 +354,7 @@ fun ChatMessage(
                     onToolApproval = onToolApproval,
                     onToolAnswer = onToolAnswer,
                     onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                    voiceCallDetails = isVoiceCall && showVoiceCallDetails,
                 )
 
                 message.translation?.let { translation ->
@@ -462,6 +463,7 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    voiceCallDetails: Boolean = false,
 ) {
     val context = LocalContext.current
     val stickerStore = remember(context) { StickerStore.get(context) }
@@ -629,7 +631,9 @@ private fun MessagePartsBlock(
                             } else if (role == MessageRole.USER) {
                                 ChatMessageBubble(
                                     role = role,
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                    color = if (voiceCallDetails) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity)
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                    voiceCall = voiceCallDetails,
                                     onClick = { onUserMessageClick?.invoke() },
                                     // 用户气泡不占满整行，和助手的回复错开
                                     modifier = Modifier
@@ -646,10 +650,12 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             } else {
-                                if (chatTheme.forceAssistantBubble || settings.displaySetting.showAssistantBubble) {
+                                if (voiceCallDetails || chatTheme.forceAssistantBubble || settings.displaySetting.showAssistantBubble) {
                                     ChatMessageBubble(
                                         role = role,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                        color = if (voiceCallDetails) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity)
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                        voiceCall = voiceCallDetails,
                                         modifier = Modifier.animateContentSize(),
                                     ) {
                                         MarkdownBlock(
@@ -781,6 +787,7 @@ private fun ChatMessageBubble(
     color: Color,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    voiceCall: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -796,13 +803,16 @@ private fun ChatMessageBubble(
     }
     val contentColor = chatTheme.textColor ?: contentColorFor(color)
     val bubbleBackground = when {
+        voiceCall -> Modifier.background(color)
         role == MessageRole.USER && chatTheme.userBubbleColors.isNotEmpty() ->
             Modifier.background(Brush.horizontalGradient(chatTheme.userBubbleColors))
         role == MessageRole.ASSISTANT && chatTheme.assistantBubbleColor != null ->
             Modifier.background(chatTheme.assistantBubbleColor)
         else -> Modifier.background(color)
     }
-    val bubbleBorder = if (role == MessageRole.ASSISTANT && chatTheme.assistantBubbleBorder != null) {
+    val bubbleBorder = if (voiceCall) {
+        Modifier.border(1.dp, MaterialTheme.colorScheme.tertiary, shape)
+    } else if (role == MessageRole.ASSISTANT && chatTheme.assistantBubbleBorder != null) {
         Modifier.border(1.dp, chatTheme.assistantBubbleBorder, shape)
     } else Modifier
     Box(

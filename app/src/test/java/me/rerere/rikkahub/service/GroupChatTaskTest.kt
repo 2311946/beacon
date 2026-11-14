@@ -27,6 +27,74 @@ import kotlin.uuid.Uuid
 
 class GroupChatTaskTest {
     @Test
+    fun `summary completion is emitted only after successful application`() = runBlocking<Unit> {
+        withTimeout(5_000) {
+            val task = GroupChatTask(this)
+            val id = Uuid.random()
+            val completed = CompletableDeferred<Uuid>()
+            val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+                completed.complete(task.summaryCompletions.first())
+            }
+            task.runSummary(Uuid.random()) { false } // 自动检查未达阈值。
+            kotlinx.coroutines.yield()
+            assertFalse(completed.isCompleted)
+            task.runSummary(id) {
+                assertFalse(completed.isCompleted) // 尚未落库，不应先通知。
+                true
+            }
+            assertEquals(id, completed.await())
+            collector.join()
+        }
+    }
+
+    @Test
+    fun `failed and cancelled summaries do not report completion`() = runBlocking<Unit> {
+        val task = GroupChatTask(this)
+        val completed = CompletableDeferred<Uuid>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            completed.complete(task.summaryCompletions.first())
+        }
+        try {
+            val failure = IllegalStateException("保存失败")
+            try {
+                task.runSummary(Uuid.random()) { throw failure }
+                fail("should propagate failure")
+            } catch (e: IllegalStateException) {
+                assertSame(failure, e)
+            }
+            try {
+                task.runSummary(Uuid.random()) { throw kotlinx.coroutines.CancellationException("停止") }
+                fail("should propagate cancellation")
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // 由上层处理取消，不显示成功或错误。
+            }
+            kotlinx.coroutines.yield()
+            assertFalse(completed.isCompleted)
+            assertTrue(task.summaryCompletions.replayCache.isEmpty())
+        } finally {
+            collector.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun `summary completed while away is not replayed on return`() = runBlocking<Unit> {
+        withTimeout(5_000) {
+            val task = GroupChatTask(this)
+            task.runSummary(Uuid.random()) { true }
+            val completed = CompletableDeferred<Uuid>()
+            val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+                completed.complete(task.summaryCompletions.first())
+            }
+            assertFalse(completed.isCompleted)
+            val current = Uuid.random()
+            task.runSummary(current) { true }
+            assertEquals(current, completed.await())
+            collector.join()
+            assertTrue(task.summaryCompletions.replayCache.isEmpty())
+        }
+    }
+
+    @Test
     fun `regenerating a user turn removes old replies then produces two complete rounds`() = runBlocking<Unit> {
         val user = UIMessage.user("重新回答")
         val old = UIMessage.assistant("旧回复")

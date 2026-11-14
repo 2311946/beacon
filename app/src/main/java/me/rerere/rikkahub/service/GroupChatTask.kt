@@ -8,6 +8,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +34,12 @@ internal class GroupChatTask(
 ) {
     private val mutableState = MutableStateFlow(GroupChatTaskState())
     val state: StateFlow<GroupChatTaskState> = mutableState.asStateFlow()
+    // 瞬时结果不重放：离页完成后，重入仅恢复摘要状态，不补弹旧提示。
+    private val mutableSummaryCompletions = MutableSharedFlow<Uuid>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val summaryCompletions: SharedFlow<Uuid> = mutableSummaryCompletions.asSharedFlow()
     private var job: Job? = null
     private var stopping = false
     private var manualChoice: CompletableDeferred<Uuid?>? = null
@@ -85,6 +95,14 @@ internal class GroupChatTask(
                 setSpeaker(id)
                 if (!generate(id)) return
             }
+        }
+    }
+
+    /** 只有实际应用摘要后才通知，跳过、异常和取消不冒充成功。 */
+    suspend fun runSummary(conversationId: Uuid, summarize: suspend () -> Boolean) {
+        if (summarize()) {
+            currentCoroutineContext().ensureActive()
+            mutableSummaryCompletions.tryEmit(conversationId)
         }
     }
 

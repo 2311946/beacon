@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -62,6 +64,10 @@ class GroupChatVM(
     private val conversationId: StateFlow<Uuid?> = groupChat
         .map { it?.conversationId }
         .stateIn(viewModelScope, SharingStarted.Eagerly, groupChat.value?.conversationId)
+
+    // 不转成 StateFlow，不把历史结果重放给重入页面。
+    val summaryCompletions = (groupUuid?.let(groupChatService::summaryCompletions) ?: emptyFlow())
+        .filter { id -> id == conversationId.value }
 
     private val conversationLoadError = MutableStateFlow<String?>(null)
 
