@@ -166,6 +166,31 @@ class ConversationSession(
         }
     }
 
+    /** 总结先持久化再发布；保存失败不能让未保存的摘要替换后续请求的原文。 */
+    internal suspend fun commitGroupSummary(
+        expectedIncarnation: Int,
+        transform: (Conversation) -> Conversation,
+        persist: suspend (Conversation) -> Unit,
+    ): Boolean = writeMutex.withLock {
+        if (incarnation != expectedIncarnation) return@withLock false
+        val before = state.value
+        val proposed = transform(before)
+        persist(proposed)
+        // 写入期间消息仍可能被编辑；重新在最新状态上应用带来源校验的变换。
+        try {
+            synchronized(this) {
+                val latest = state.value
+                val updated = update(transform)
+                if (lastWritten === before && latest === before) lastWritten = updated
+            }
+        } catch (e: Exception) {
+            // 当前来源失效时不发布；数据库恢复当前配置，原始消息不受影响。
+            persist(state.value)
+            throw e
+        }
+        true
+    }
+
     /**
      * 整条替换会话（删除、撤销删除）：先停止并等待所有任务，在锁内改写数据库，再把内存换成与之一致的状态。
      * 页面和 SSE 仍然持有同一个会话对象，直接看到新状态，引用计数也不受影响。
@@ -271,6 +296,12 @@ class ConversationSession(
     }
 
     fun getJob(): Job? = _generationJob.value
+
+    /** 辅助请求不占回复槽，但删除/恢复会话必须取消并等待它。 */
+    @Synchronized
+    internal fun trackAuxiliaryJob(job: Job) {
+        if (activeJobs.add(job)) job.invokeOnCompletion { synchronized(this) { activeJobs.remove(job) } }
+    }
 
     @Synchronized
     fun cancelJobs(): List<Job> = activeJobs.toList().also { jobs ->

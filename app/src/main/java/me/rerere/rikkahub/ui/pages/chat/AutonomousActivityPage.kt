@@ -106,7 +106,7 @@ fun AutonomousActivityPage(
                     message = when {
                         days.loading -> "正在加载活动记录…"
                         days.error != null -> "活动记录加载失败，请重试"
-                        else -> "暂无活动记录\n角色自主活动后，会在这里留下记录"
+                        else -> "暂无活动记录\n角色活动或状态更新后，会在这里留下记录"
                     },
                     loading = days.loading,
                     onRetry = if (days.error != null) retryDays else null,
@@ -216,6 +216,9 @@ private fun AutonomousActivityItem(
         "message_sent" -> "已发送消息"
         "not_sent" -> "想联系，但未发送"
         "sleep" -> "暂不打扰"
+        "status_chat" -> "聊天活动"
+        "status_refresh" -> "日常活动"
+        "status_manual" -> "手动设置的活动"
         else -> activity.decision.ifBlank { "未记录决策" }
     }
     val timestamp = remember(activity.createdAt) {

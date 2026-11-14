@@ -31,11 +31,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,10 +70,14 @@ fun GroupChatSettingsPage(
     ),
 ) {
     val settings by vm.settings.collectAsState()
+    val memberActivities by vm.memberActivities.collectAsStateWithLifecycle()
     val current = vm.draftGroup
     val isGlobal = vm.isGlobal
     val config = if (isGlobal) vm.draftDefaults else current?.resolved(settings.groupChatDefaults) ?: settings.groupChatDefaults
     val chatContextCount = normalizeChatContextCount(config.singleChatContextCount)
+    val summaryThreshold = config.autoSummaryMessageThreshold.coerceIn(40, 300)
+    val summaryKeepMaximum = minOf(50, summaryThreshold - 1)
+    val summaryKeepRecent = config.summaryKeepRecentMessages.coerceIn(0, summaryKeepMaximum)
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showUnsavedDialog by rememberSaveable { mutableStateOf(false) }
     val nav = LocalNavController.current
@@ -180,7 +186,7 @@ fun GroupChatSettingsPage(
                         item(
                             onClick = if (vm.saving) null else vm::resetAllToDefaults,
                             headlineContent = { Text("全部恢复全局默认") },
-                            supportingContent = { Text("仅将发言策略、自动接话轮数、间隔、上下文互通及群聊提示词恢复继承，不修改群名、头像、成员或禁言设置；保存后生效。") },
+                            supportingContent = { Text("仅将发言策略、自动接话轮数、间隔、上下文互通、自动总结及群聊提示词恢复继承，不修改群名、头像、成员或禁言设置；保存后生效。") },
                         )
                     }
                 }
@@ -262,6 +268,75 @@ fun GroupChatSettingsPage(
                     }
                 }
             }
+            item("auto_summary") {
+                CardGroup(title = { Text("自动总结") }) {
+                    formItem(
+                        headlineContent = { Text("启用自动总结") },
+                        trailingContent = {
+                            Switch(
+                                checked = config.autoSummaryEnabled,
+                                onCheckedChange = vm::setAutoSummaryEnabled,
+                                enabled = !vm.saving,
+                            )
+                        },
+                    ) {
+                        if (!isGlobal) {
+                            OverrideStatus(
+                                inherited = current?.autoSummaryEnabledOverride == null,
+                                onReset = vm::resetAutoSummaryEnabled,
+                                onCustomize = { vm.setAutoSummaryEnabled(config.autoSummaryEnabled) },
+                                enabled = !vm.saving,
+                            )
+                        }
+                        Text(
+                            "达到阈值后自动总结较早的群聊消息，会产生额外模型调用费用。仅压缩发送给模型的请求，不删除聊天历史；自动总结失败不会阻断聊天。修改后点击保存生效。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    formItem(headlineContent = { Text("自动总结消息阈值") }) {
+                        if (!isGlobal) {
+                            OverrideStatus(
+                                inherited = current?.autoSummaryMessageThresholdOverride == null,
+                                onReset = vm::resetAutoSummaryMessageThreshold,
+                                onCustomize = { vm.setAutoSummaryMessageThreshold(summaryThreshold) },
+                                enabled = !vm.saving,
+                            )
+                        }
+                        Text("达到 $summaryThreshold 条消息时触发", style = MaterialTheme.typography.bodyMedium)
+                        Slider(
+                            value = summaryThreshold.toFloat(),
+                            onValueChange = { vm.setAutoSummaryMessageThreshold(it.toInt()) },
+                            valueRange = 40f..300f,
+                            steps = 259,
+                            enabled = !vm.saving,
+                        )
+                    }
+                    formItem(headlineContent = { Text("保留最近消息条数") }) {
+                        if (!isGlobal) {
+                            OverrideStatus(
+                                inherited = current?.summaryKeepRecentMessagesOverride == null,
+                                onReset = vm::resetSummaryKeepRecentMessages,
+                                onCustomize = { vm.setSummaryKeepRecentMessages(summaryKeepRecent) },
+                                enabled = !vm.saving,
+                            )
+                        }
+                        Text("保留最近 $summaryKeepRecent 条原始消息", style = MaterialTheme.typography.bodyMedium)
+                        Slider(
+                            value = summaryKeepRecent.toFloat(),
+                            onValueChange = { vm.setSummaryKeepRecentMessages(it.toInt()) },
+                            valueRange = 0f..summaryKeepMaximum.toFloat(),
+                            steps = summaryKeepMaximum - 1,
+                            enabled = !vm.saving,
+                        )
+                        Text(
+                            "保留数量须小于总结阈值，最多 50 条；设为 0 表示不额外保留最近的原始消息。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             item("system_prompt") {
                 CardGroup {
                     formItem(headlineContent = { Text("群聊提示词") }) {
@@ -316,8 +391,25 @@ fun GroupChatSettingsPage(
                             onValueChange = { vm.setMemberJoined(assistant.id, it) },
                         ),
                         headlineContent = { Text(assistant.name.ifBlank { "未命名助手" }) },
-                        supportingContent = { Text(if (muted) "已禁言，不会发言" else if (joined) "在群内" else "不在群内") },
-                        leadingContent = { Checkbox(checked = joined, onCheckedChange = null) },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(if (muted) "已禁言，不会发言" else if (joined) "在群内" else "不在群内")
+                                if (joined) GroupActivityLabel(memberActivities[assistant.id]?.content)
+                            }
+                        },
+                        leadingContent = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Checkbox(checked = joined, onCheckedChange = null)
+                                GroupMessageAvatar(
+                                    name = assistant.name.ifBlank { "未命名助手" },
+                                    avatar = assistant.avatar,
+                                    activity = if (joined) memberActivities[assistant.id]?.content ?: "暂无活动记录" else null,
+                                )
+                            }
+                        },
                         trailingContent = {
                             if (joined) {
                                 IconButton(onClick = { vm.setMemberMuted(assistant.id, !muted) }) {

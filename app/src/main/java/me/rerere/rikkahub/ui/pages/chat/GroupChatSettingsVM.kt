@@ -11,6 +11,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
+import me.rerere.rikkahub.data.repository.AutonomousActivityRepository
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
@@ -34,6 +38,7 @@ class GroupChatSettingsVM(
     private val conversationRepo: ConversationRepository,
     private val chatService: ChatService,
     private val groupChatService: me.rerere.rikkahub.service.GroupChatService,
+    private val activityRepository: AutonomousActivityRepository,
 ) : ViewModel() {
 
     companion object {
@@ -50,6 +55,13 @@ class GroupChatSettingsVM(
     val groupChat: StateFlow<GroupChat?> = settingsStore.settingsFlow
         .map { settings -> settings.groupChats.firstOrNull { it.id == groupUuid } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // 观察可选角色，未保存的新加入成员也能立即展示其已有活动；全局设置不订阅数据库。
+    val memberActivities: StateFlow<Map<Uuid, AutonomousActivityEntity>> = settings
+        .map { current -> if (isGlobal) emptyList() else current.assistants.map { it.id } }
+        .distinctUntilChanged()
+        .flatMapLatest(activityRepository::observeLatestOrdinaryActivities)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     var draftGroup by mutableStateOf<GroupChat?>(null)
         private set
@@ -199,6 +211,41 @@ class GroupChatSettingsVM(
         else update { it.copy(singleChatContextCountOverride = value) }
     }
 
+    fun setAutoSummaryEnabled(enabled: Boolean) {
+        if (isGlobal) updateDefaults { it.copy(autoSummaryEnabled = enabled) }
+        else update { it.copy(autoSummaryEnabledOverride = enabled) }
+    }
+
+    fun setAutoSummaryMessageThreshold(count: Int) {
+        val value = count.coerceIn(40, 300)
+        // 保留条数在 resolved 时按阈值规范化，避免把未修改或继承的字段写成覆盖。
+        if (isGlobal) updateDefaults { it.copy(autoSummaryMessageThreshold = value) }
+        else update { it.copy(autoSummaryMessageThresholdOverride = value) }
+    }
+
+    fun setSummaryKeepRecentMessages(count: Int) {
+        val threshold = if (isGlobal) draftDefaults.autoSummaryMessageThreshold.coerceIn(40, 300)
+        else draftGroup?.resolved(settings.value.groupChatDefaults)?.autoSummaryMessageThreshold ?: return
+        val value = count.coerceIn(0, minOf(50, threshold - 1))
+        if (isGlobal) updateDefaults { it.copy(summaryKeepRecentMessages = value) }
+        else update { it.copy(summaryKeepRecentMessagesOverride = value) }
+    }
+
+    fun resetAutoSummaryEnabled() {
+        if (isGlobal) updateDefaults { it.copy(autoSummaryEnabled = GroupChatDefaults().autoSummaryEnabled) }
+        else update { it.copy(autoSummaryEnabledOverride = null) }
+    }
+
+    fun resetAutoSummaryMessageThreshold() {
+        if (isGlobal) updateDefaults { it.copy(autoSummaryMessageThreshold = GroupChatDefaults().autoSummaryMessageThreshold) }
+        else update { it.copy(autoSummaryMessageThresholdOverride = null) }
+    }
+
+    fun resetSummaryKeepRecentMessages() {
+        if (isGlobal) updateDefaults { it.copy(summaryKeepRecentMessages = GroupChatDefaults().summaryKeepRecentMessages) }
+        else update { it.copy(summaryKeepRecentMessagesOverride = null) }
+    }
+
     fun setSystemPrompt(prompt: String) {
         if (isGlobal) updateDefaults { it.copy(systemPrompt = prompt) }
         else update { it.copy(systemPromptOverride = prompt) }
@@ -228,6 +275,9 @@ class GroupChatSettingsVM(
                     autoModeDelayOverride = null,
                     singleChatContextCountOverride = null,
                     systemPromptOverride = null,
+                    autoSummaryEnabledOverride = null,
+                    autoSummaryMessageThresholdOverride = null,
+                    summaryKeepRecentMessagesOverride = null,
                 )
             }
         }

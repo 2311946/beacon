@@ -32,6 +32,9 @@ data class ConversationConfig(
     val speakerMap: Map<Uuid, Uuid> = emptyMap(),
     // 标记为群聊会话，主聊天列表中过滤掉
     val isGroupChat: Boolean = false,
+    // 绑定本会话来源的阶段总结；原消息始终保留。归并前的版本只展示、不重复注入。
+    val groupSummaryStages: List<GroupSummaryStage> = emptyList(),
+    val groupSummaryArchive: List<GroupSummaryStage> = emptyList(),
 )
 
 /** 只改变显示偏好；草稿保持未绑定，不提前固定模型等配置。 */

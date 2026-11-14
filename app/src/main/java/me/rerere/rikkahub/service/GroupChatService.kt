@@ -78,10 +78,47 @@ class GroupChatService(
         }
     }
 
+    /** 与回复共用群任务槽；退出页面不取消，停止/删除会取消并等待总结收尾。 */
+    fun summarize(groupId: Uuid, additionalPrompt: String, keepRecentMessages: Int): Boolean {
+        val conversationId = currentGroup(groupId)?.conversationId ?: return false
+        return start(groupId) {
+            withConversation(conversationId) {
+                setSummarizing(true)
+                try {
+                    chatService.summarizeGroupConversation(conversationId, additionalPrompt, keepRecentMessages)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    chatService.addError(e, conversationId, title = "群聊总结失败，原始记录已保留")
+                } finally {
+                    setSummarizing(false)
+                }
+            }
+        }
+    }
+
+    private suspend fun GroupChatTask.maybeSummarize(groupId: Uuid, convId: Uuid) {
+        val group = currentGroup(groupId)?.takeIf { it.conversationId == convId } ?: return
+        val config = group.resolved(settingsStore.settingsFlow.value.groupChatDefaults)
+        if (!config.autoSummaryEnabled) return
+        setSummarizing(true)
+        try {
+            chatService.summarizeGroupConversation(convId, "", config.summaryKeepRecentMessages, automatic = true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 不把成功聊天标成失败；只报告总结错误，保留旧摘要和全部未压缩原文。
+            chatService.addError(e, convId, title = "自动总结失败，原聊天记录已保留")
+        } finally {
+            setSummarizing(false)
+        }
+    }
+
     private suspend fun GroupChatTask.reply(groupId: Uuid, convId: Uuid) {
         val group = currentGroup(groupId) ?: return
         val config = group.resolved(settingsStore.settingsFlow.value.groupChatDefaults)
         val manualId = if (config.activationStrategy == GroupActivationStrategy.MANUAL) awaitManualSpeaker() else null
+        var completed = true
         runRounds(
             rounds = config.autoChatRounds,
             delayMillis = config.autoModeDelay * 1000L,
@@ -105,10 +142,13 @@ class GroupChatService(
             },
             isEnabled = { id -> members(groupId).any { it.id == id } },
             generate = { id ->
-                currentGroup(groupId)?.conversationId == convId &&
-                    chatService.generateForSpeaker(convId, id, runPostTurnTasks = false)
+                (currentGroup(groupId)?.conversationId == convId &&
+                    chatService.generateForSpeaker(convId, id, runPostTurnTasks = false)).also {
+                    if (!it) completed = false
+                }
             },
         )
+        if (completed) maybeSummarize(groupId, convId)
     }
 
     fun chooseManualSpeaker(groupId: Uuid, id: Uuid?) {
@@ -229,7 +269,7 @@ class GroupChatService(
         val provider = model?.findProvider(settings.providers)
         if (model == null || provider == null) null else {
             val history = conversation?.currentMessages.orEmpty()
-                .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
+                .filter { !it.isContextCheckpoint && !it.isSynthetic && (it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT) }
                 .takeLast(8).joinToString("\n") { message ->
                     val speakerId = conversation?.config?.speakerMap?.get(message.id)
                     val name = if (message.role == MessageRole.USER) "用户" else

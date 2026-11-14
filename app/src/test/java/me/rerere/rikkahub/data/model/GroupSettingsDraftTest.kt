@@ -9,6 +9,125 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class GroupSettingsDraftTest {
+    @Test fun `旧配置继承自动总结内置默认值`() {
+        val defaults = Json.decodeFromString<GroupChatDefaults>("""{"autoChatRounds":4}""")
+        val group = Json.decodeFromString<GroupChat>("""{"name":"旧群","autoModeDelay":8}""")
+        assertTrue(defaults.autoSummaryEnabled)
+        assertEquals(80, defaults.autoSummaryMessageThreshold)
+        assertEquals(20, defaults.summaryKeepRecentMessages)
+        assertNull(group.autoSummaryEnabledOverride)
+        assertNull(group.autoSummaryMessageThresholdOverride)
+        assertNull(group.summaryKeepRecentMessagesOverride)
+        assertEquals(defaults.copy(autoModeDelay = 8), group.resolved(defaults))
+    }
+
+    @Test fun `自动总结逐字段继承最新全局值且关闭覆盖不被忽略`() {
+        val defaults = GroupChatDefaults(autoSummaryEnabled = true, autoSummaryMessageThreshold = 120,
+            summaryKeepRecentMessages = 30)
+        val inherited = GroupChat()
+        assertEquals(defaults, inherited.resolved(defaults))
+        val changed = defaults.copy(autoSummaryEnabled = false, autoSummaryMessageThreshold = 200,
+            summaryKeepRecentMessages = 45)
+        assertEquals(changed, inherited.resolved(changed))
+        val group = inherited.copy(autoSummaryEnabledOverride = false, autoSummaryMessageThresholdOverride = 60)
+        assertEquals(defaults.copy(autoSummaryEnabled = false, autoSummaryMessageThreshold = 60), group.resolved(defaults))
+        assertEquals(changed.copy(autoSummaryMessageThreshold = 60), group.resolved(changed))
+        assertFalse(group.resolved(defaults).autoSummaryEnabled)
+    }
+
+    @Test fun `自动总结覆盖包含空值和零条数可独立序列化`() {
+        val json = Json { encodeDefaults = true }
+        val defaults = GroupChatDefaults(autoSummaryEnabled = false, autoSummaryMessageThreshold = 150,
+            summaryKeepRecentMessages = 40)
+        assertEquals(defaults, Json.decodeFromString<GroupChatDefaults>(Json.encodeToString(defaults)))
+        listOf(GroupChat(), GroupChat(autoSummaryEnabledOverride = false,
+            autoSummaryMessageThresholdOverride = 40, summaryKeepRecentMessagesOverride = 0)).forEach { group ->
+            val encoded = json.encodeToString(group)
+            val expected = group.autoSummaryEnabledOverride?.let { JsonPrimitive(it) } ?: JsonNull
+            assertEquals(expected, json.parseToJsonElement(encoded).jsonObject["autoSummaryEnabledOverride"])
+            assertEquals(group, json.decodeFromString<GroupChat>(encoded))
+            assertEquals(group, Json.decodeFromString<GroupChat>(Json.encodeToString(group)))
+        }
+        assertEquals(0, GroupChat(summaryKeepRecentMessagesOverride = 0).resolved(defaults).summaryKeepRecentMessages)
+    }
+
+    @Test fun `自动总结解析规范化全局和群级边界且不修改存储值`() {
+        listOf(Int.MIN_VALUE, -1, 0, 39, 40, 50, 80, 300, 301, Int.MAX_VALUE).forEach { threshold ->
+            listOf(Int.MIN_VALUE, -1, 0, 20, 39, 40, 50, 51, Int.MAX_VALUE).forEach { keep ->
+                val expectedThreshold = threshold.coerceIn(40, 300)
+                val expectedKeep = keep.coerceIn(0, minOf(50, expectedThreshold - 1))
+                val defaults = GroupChatDefaults(autoSummaryMessageThreshold = threshold, summaryKeepRecentMessages = keep)
+                val group = GroupChat(autoSummaryMessageThresholdOverride = threshold, summaryKeepRecentMessagesOverride = keep)
+                listOf(GroupChat().resolved(defaults), group.resolved(GroupChatDefaults())).forEach { resolved ->
+                    assertEquals(expectedThreshold, resolved.autoSummaryMessageThreshold)
+                    assertEquals(expectedKeep, resolved.summaryKeepRecentMessages)
+                    assertTrue(resolved.summaryKeepRecentMessages < resolved.autoSummaryMessageThreshold)
+                }
+                assertEquals(threshold, defaults.autoSummaryMessageThreshold)
+                assertEquals(keep, group.summaryKeepRecentMessagesOverride)
+            }
+        }
+    }
+
+    @Test fun `继承保留条数按群级阈值规范化且阈值回升后恢复`() {
+        val defaults = GroupChatDefaults(summaryKeepRecentMessages = 50)
+        val group = GroupChat(autoSummaryMessageThresholdOverride = 40)
+        assertEquals(39, group.resolved(defaults).summaryKeepRecentMessages)
+        assertNull(group.summaryKeepRecentMessagesOverride)
+        assertEquals(50, group.copy(autoSummaryMessageThresholdOverride = 100).resolved(defaults).summaryKeepRecentMessages)
+        assertEquals(39, GroupChat(summaryKeepRecentMessagesOverride = 50)
+            .resolved(defaults.copy(autoSummaryMessageThreshold = 40)).summaryKeepRecentMessages)
+    }
+
+    @Test fun `总结群级草稿只合并实际修改字段且保留运行中会话`() {
+        val base = GroupChat(name = "群")
+        val latest = base.copy(conversationId = Uuid.random(), chatModelId = Uuid.random(),
+            autoSummaryEnabledOverride = true, autoSummaryMessageThresholdOverride = 150,
+            summaryKeepRecentMessagesOverride = 40, systemPromptOverride = "外部提示词")
+        val drafts = listOf(
+            base.copy(autoSummaryEnabledOverride = false) to latest.copy(autoSummaryEnabledOverride = false),
+            base.copy(autoSummaryMessageThresholdOverride = 60) to latest.copy(autoSummaryMessageThresholdOverride = 60),
+            base.copy(summaryKeepRecentMessagesOverride = 0) to latest.copy(summaryKeepRecentMessagesOverride = 0),
+        )
+        drafts.forEach { (draft, expected) ->
+            assertEquals(expected, mergeGroupSettingsDraft(latest, base, draft.copy(conversationId = Uuid.random())))
+        }
+        val reverted = base.copy(autoSummaryEnabledOverride = false).copy(autoSummaryEnabledOverride = null)
+        assertEquals(latest, mergeGroupSettingsDraft(latest, base, reverted))
+        assertNull(base.autoSummaryEnabledOverride)
+    }
+
+    @Test fun `总结全局草稿只合并实际修改字段`() {
+        val base = GroupChatDefaults()
+        val latest = base.copy(autoSummaryEnabled = false, autoSummaryMessageThreshold = 200,
+            summaryKeepRecentMessages = 45, autoChatRounds = 7)
+        assertEquals(latest.copy(autoSummaryEnabled = true), mergeGroupDefaultsDraft(latest,
+            base.copy(autoSummaryEnabled = false), base))
+        assertEquals(latest.copy(autoSummaryMessageThreshold = 60),
+            mergeGroupDefaultsDraft(latest, base, base.copy(autoSummaryMessageThreshold = 60)))
+        assertEquals(latest.copy(summaryKeepRecentMessages = 0),
+            mergeGroupDefaultsDraft(latest, base, base.copy(summaryKeepRecentMessages = 0)))
+        assertEquals(latest, mergeGroupDefaultsDraft(latest, base, base))
+        assertEquals(80, base.autoSummaryMessageThreshold)
+    }
+
+    @Test fun `总结恢复继承保存后跟随全局且保留其他字段`() {
+        val memberId = Uuid.random()
+        val base = GroupChat(name = "群", memberIds = listOf(memberId), disabledMemberIds = listOf(memberId),
+            autoSummaryEnabledOverride = false, autoSummaryMessageThresholdOverride = 60,
+            summaryKeepRecentMessagesOverride = 0)
+        val draft = base.copy(autoSummaryEnabledOverride = null, autoSummaryMessageThresholdOverride = null,
+            summaryKeepRecentMessagesOverride = null)
+        val latest = base.copy(conversationId = Uuid.random())
+        val saved = mergeGroupSettingsDraft(latest, base, draft)
+        assertEquals(draft.copy(conversationId = latest.conversationId), saved)
+        assertFalse(base.resolved(GroupChatDefaults()).autoSummaryEnabled)
+        assertEquals(0, base.summaryKeepRecentMessagesOverride)
+        val restored = Json.decodeFromString<GroupChat>(Json.encodeToString(saved))
+        val defaults = GroupChatDefaults(autoSummaryMessageThreshold = 180, summaryKeepRecentMessages = 45)
+        assertEquals(defaults, restored.resolved(defaults))
+    }
+
     @Test fun `old JSON inherits the default system prompt`() {
         val defaults = Json.decodeFromString<GroupChatDefaults>("""{"autoChatRounds":4}""")
         val group = Json.decodeFromString<GroupChat>("""{"name":"旧群","autoModeDelay":8}""")

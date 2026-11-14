@@ -334,5 +334,19 @@ class AssistantStatusReplyTest {
             .generatedAssistantStatus())
     }
 
+    @Test
+    fun `activity history excludes wakeup tasks including approval continuation`() {
+        listOf("autonomous_task", "autonomous_wakeup").forEach { event ->
+            val trigger = UIMessage.user("内部任务").copy(parts = listOf(
+                UIMessagePart.Text("内部任务", buildJsonObject { put("beacon_event", event) }),
+            ))
+            assertFalse(listOf(trigger, UIMessage.assistant("执行中")).shouldRecordOrdinaryActivity())
+            assertTrue(listOf(trigger, UIMessage.assistant("已完成"), UIMessage.user("普通聊天"))
+                .shouldRecordOrdinaryActivity())
+        }
+        assertTrue(listOf(UIMessage.user("普通聊天"), UIMessage.assistant("回复")).shouldRecordOrdinaryActivity())
+        assertFalse(emptyList<UIMessage>().shouldRecordOrdinaryActivity())
+    }
+
     private fun List<UIMessagePart>.text(): String = filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }
 }

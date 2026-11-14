@@ -64,6 +64,19 @@ class ChatContextBridgeTest {
         assertNotEquals(first.last().toText(), next.last().toText())
     }
 
+    @Test fun forkMessagesKeepTheirOwnConversationSourceAndExcludeSummaries() {
+        val shared = message(1)
+        val source = me.rerere.rikkahub.data.model.Conversation.ofId(kotlin.uuid.Uuid.random())
+            .copy(title = "私聊一").updateCurrentMessages(listOf(shared))
+        val fork = source.copy(id = kotlin.uuid.Uuid.random(), title = "复制私聊")
+            .updateCurrentMessages(listOf(shared, message(2).copy(isContextCheckpoint = true)))
+        val recent = recentSourcedBridgeMessages(listOf(source, fork), 5)
+        assertEquals(2, recent.size)
+        assertEquals(setOf(source.id, fork.id), recent.map { it.conversationId }.toSet())
+        assertTrue(recent.all { it.message.id == shared.id })
+        recent.forEach { assertEquals(if (it.conversationId == source.id) "私聊一" else "复制私聊", it.conversationTitle) }
+    }
+
     @Test fun currentTimeUsesExactChineseFormat() {
         assertEquals("[当前时间：2026年11月8日 周日 09:30]", formatCurrentChatTime(java.time.LocalDateTime.of(2026, 11, 8, 9, 30)))
         assertEquals("[当前时间：2026年11月9日 周一 00:05]", formatCurrentChatTime(java.time.LocalDateTime.of(2026, 11, 9, 0, 5)))

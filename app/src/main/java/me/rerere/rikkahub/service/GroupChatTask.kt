@@ -20,6 +20,7 @@ internal data class GroupChatTaskState(
     val isGenerating: Boolean = false,
     val currentSpeakerId: Uuid? = null,
     val awaitingManualSpeaker: Boolean = false,
+    val isSummarizing: Boolean = false,
     val error: String? = null,
 )
 
@@ -85,6 +86,14 @@ internal class GroupChatTask(
                 if (!generate(id)) return
             }
         }
+    }
+
+    @Synchronized
+    fun setSummarizing(value: Boolean) {
+        if (!stopping) mutableState.value = mutableState.value.copy(
+            isSummarizing = value,
+            currentSpeakerId = null,
+        )
     }
 
     @Synchronized

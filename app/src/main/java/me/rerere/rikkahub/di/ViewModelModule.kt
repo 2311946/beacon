@@ -64,6 +64,7 @@ val viewModelModule = module {
             settingsStore = get(),
             chatService = get(),
             groupChatService = get(),
+            activityRepository = get(),
         )
     }
     viewModel<GroupChatSettingsVM> { params ->
@@ -73,6 +74,7 @@ val viewModelModule = module {
             conversationRepo = get(),
             chatService = get(),
             groupChatService = get(),
+            activityRepository = get(),
         )
     }
     viewModelOf(::ProactiveMessageSettingsVM)

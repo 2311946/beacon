@@ -243,6 +243,45 @@ class ChatRequestFactory(
         return summary.ifBlank { error("Failed to generate compressed summary") }
     }
 
+    /** 群总结采用中立记录员，不带角色记忆、私聊桥接或活动生成指令，不受聊天条数裁剪。 */
+    suspend fun generateGroupSummary(
+        settings: Settings,
+        conversationId: Uuid,
+        assistant: Assistant,
+        model: Model,
+        transcript: String,
+        additionalPrompt: String,
+        merge: Boolean = false,
+    ): List<me.rerere.rikkahub.data.model.GroupSummaryTopic> {
+        val provider = model.findProvider(settings.providers) ?: error("总结模型的服务商不存在")
+        val result = withRetry(
+            policy = settings.retryPolicy(),
+            onRetry = { Log.w(TAG, "Group summary retry", it.cause) },
+        ) {
+            usageRecorder.wrap(
+                providerManager.getProviderByType(provider),
+                UsageTag(UsageSource.COMPRESSION, assistant.id, conversationId),
+            ).generateText(
+                providerSetting = provider,
+                messages = listOf(
+                    UIMessage.system(buildGroupSummaryPrompt(additionalPrompt, merge)),
+                    UIMessage.user(transcript),
+                ),
+                params = backgroundTextGenerationParams(model.copy(tools = emptySet()), conversationId, ReasoningLevel.OFF).copy(
+                    temperature = 0.2f,
+                    maxTokens = 8192,
+                    customHeaders = assistant.customHeaders + model.customHeaders,
+                    customBody = assistant.customBodies + model.customBodies,
+                ),
+            )
+        }
+        check(result.finishReason?.lowercase() !in setOf("length", "max_tokens", "max_output_tokens", "incomplete")) {
+            "总结输出被截断，未应用压缩，请缩小总结范围或更换模型"
+        }
+        val text = result.message.compressionSummaryOrNull() ?: error("总结请求返回了工具调用，未应用压缩")
+        return parseGroupSummaryTopics(text)
+    }
+
     /** 一步请求实际发出的消息和参数；正常对话和压缩共用，二者的请求前缀必须一致才能命中提示词缓存 */
     private suspend fun buildStep(
         turn: ChatTurnContext,

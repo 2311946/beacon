@@ -37,15 +37,25 @@ data class GroupChat(
     val singleChatContextCountOverride: Int? = legacySingleChatContextCount,
     val avatar: Avatar = Avatar.Dummy,
     val systemPromptOverride: String? = null, // null 继承全局；空字符串不附加群聊提示词
+    val autoSummaryEnabledOverride: Boolean? = null,
+    val autoSummaryMessageThresholdOverride: Int? = null,
+    val summaryKeepRecentMessagesOverride: Int? = null,
 ) {
     /** 生成和展示时传入当前 Settings.groupChatDefaults，不要把解析结果写回群配置。 */
-    fun resolved(defaults: GroupChatDefaults): GroupChatDefaults = GroupChatDefaults(
-        activationStrategy = activationStrategyOverride ?: defaults.activationStrategy,
-        autoChatRounds = (autoChatRoundsOverride ?: defaults.autoChatRounds).coerceIn(1, 10),
-        autoModeDelay = (autoModeDelayOverride ?: defaults.autoModeDelay).coerceIn(0, 60),
-        singleChatContextCount = normalizeChatContextCount(singleChatContextCountOverride ?: defaults.singleChatContextCount),
-        systemPrompt = systemPromptOverride ?: defaults.systemPrompt,
-    )
+    fun resolved(defaults: GroupChatDefaults): GroupChatDefaults {
+        val summaryThreshold = (autoSummaryMessageThresholdOverride ?: defaults.autoSummaryMessageThreshold).coerceIn(40, 300)
+        return GroupChatDefaults(
+            activationStrategy = activationStrategyOverride ?: defaults.activationStrategy,
+            autoChatRounds = (autoChatRoundsOverride ?: defaults.autoChatRounds).coerceIn(1, 10),
+            autoModeDelay = (autoModeDelayOverride ?: defaults.autoModeDelay).coerceIn(0, 60),
+            singleChatContextCount = normalizeChatContextCount(singleChatContextCountOverride ?: defaults.singleChatContextCount),
+            systemPrompt = systemPromptOverride ?: defaults.systemPrompt,
+            autoSummaryEnabled = autoSummaryEnabledOverride ?: defaults.autoSummaryEnabled,
+            autoSummaryMessageThreshold = summaryThreshold,
+            summaryKeepRecentMessages = (summaryKeepRecentMessagesOverride ?: defaults.summaryKeepRecentMessages)
+                .coerceIn(0, minOf(50, summaryThreshold - 1)),
+        )
+    }
 
     // 兼容尚未接入全局默认值的调用方；实际运行配置应通过 resolved 读取。
     val activationStrategy: GroupActivationStrategy get() = resolved(GroupChatDefaults()).activationStrategy
@@ -65,6 +75,9 @@ data class GroupChatDefaults(
     val autoModeDelay: Int = 3, // 自动接话延迟（秒），0=立即
     val singleChatContextCount: Int = 5, // 单聊/群聊上下文互通条数，范围 1–10
     val systemPrompt: String = DEFAULT_GROUP_CHAT_SYSTEM_PROMPT,
+    val autoSummaryEnabled: Boolean = true,
+    val autoSummaryMessageThreshold: Int = 80,
+    val summaryKeepRecentMessages: Int = 20,
 )
 
 internal fun normalizeChatContextCount(count: Int): Int = if (count <= 0) 5 else count.coerceAtMost(10)
@@ -80,6 +93,9 @@ internal fun mergeGroupSettingsDraft(latest: GroupChat, base: GroupChat, draft: 
     autoModeDelayOverride = if (draft.autoModeDelayOverride != base.autoModeDelayOverride) draft.autoModeDelayOverride else latest.autoModeDelayOverride,
     singleChatContextCountOverride = if (draft.singleChatContextCountOverride != base.singleChatContextCountOverride) draft.singleChatContextCountOverride else latest.singleChatContextCountOverride,
     systemPromptOverride = if (draft.systemPromptOverride != base.systemPromptOverride) draft.systemPromptOverride else latest.systemPromptOverride,
+    autoSummaryEnabledOverride = if (draft.autoSummaryEnabledOverride != base.autoSummaryEnabledOverride) draft.autoSummaryEnabledOverride else latest.autoSummaryEnabledOverride,
+    autoSummaryMessageThresholdOverride = if (draft.autoSummaryMessageThresholdOverride != base.autoSummaryMessageThresholdOverride) draft.autoSummaryMessageThresholdOverride else latest.autoSummaryMessageThresholdOverride,
+    summaryKeepRecentMessagesOverride = if (draft.summaryKeepRecentMessagesOverride != base.summaryKeepRecentMessagesOverride) draft.summaryKeepRecentMessagesOverride else latest.summaryKeepRecentMessagesOverride,
 )
 
 internal fun mergeGroupDefaultsDraft(latest: GroupChatDefaults, base: GroupChatDefaults, draft: GroupChatDefaults): GroupChatDefaults = latest.copy(
@@ -88,6 +104,9 @@ internal fun mergeGroupDefaultsDraft(latest: GroupChatDefaults, base: GroupChatD
     autoModeDelay = if (draft.autoModeDelay != base.autoModeDelay) draft.autoModeDelay else latest.autoModeDelay,
     singleChatContextCount = if (draft.singleChatContextCount != base.singleChatContextCount) draft.singleChatContextCount else latest.singleChatContextCount,
     systemPrompt = if (draft.systemPrompt != base.systemPrompt) draft.systemPrompt else latest.systemPrompt,
+    autoSummaryEnabled = if (draft.autoSummaryEnabled != base.autoSummaryEnabled) draft.autoSummaryEnabled else latest.autoSummaryEnabled,
+    autoSummaryMessageThreshold = if (draft.autoSummaryMessageThreshold != base.autoSummaryMessageThreshold) draft.autoSummaryMessageThreshold else latest.autoSummaryMessageThreshold,
+    summaryKeepRecentMessages = if (draft.summaryKeepRecentMessages != base.summaryKeepRecentMessages) draft.summaryKeepRecentMessages else latest.summaryKeepRecentMessages,
 )
 
 /** 群聊选人策略，具体调度由群聊执行层负责。 */

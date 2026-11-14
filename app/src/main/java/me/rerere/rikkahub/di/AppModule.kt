@@ -32,6 +32,7 @@ val appModule = module {
             providerManager = get(),
             usageRecorder = get(),
             conversationRepository = get(),
+            activityRepository = get(),
         )
     }
 

@@ -42,7 +42,8 @@ internal fun Conversation.fork(
         customSystemPrompt = customSystemPrompt,
         modeInjectionIds = modeInjectionIds,
         lorebookIds = lorebookIds,
-        config = config,
+        // 总结来源绑定原会话，fork后从复制的原文重新生成，不带入其他会话的覆盖进度。
+        config = config?.copy(groupSummaryStages = emptyList(), groupSummaryArchive = emptyList()),
         workspaceCwd = workspaceCwd,
         folderId = folderId,
     )

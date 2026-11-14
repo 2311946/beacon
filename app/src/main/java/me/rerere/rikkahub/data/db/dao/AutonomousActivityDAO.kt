@@ -23,6 +23,17 @@ interface AutonomousActivityDAO {
         endExclusive: Long,
     ): Flow<List<AutonomousActivityEntity>>
 
+    /** 每个角色只取最新普通活动；唤醒记录不参与，时间相同时用主键稳定排序。 */
+    @Query(
+        "SELECT a.* FROM autonomous_activity a WHERE a.assistant_id IN (:assistantIds) " +
+            "AND a.decision IN ('status_chat', 'status_refresh', 'status_manual') AND TRIM(a.content) != '' " +
+            "AND NOT EXISTS (SELECT 1 FROM autonomous_activity newer " +
+            "WHERE newer.assistant_id = a.assistant_id " +
+            "AND newer.decision IN ('status_chat', 'status_refresh', 'status_manual') AND TRIM(newer.content) != '' " +
+            "AND (newer.created_at > a.created_at OR (newer.created_at = a.created_at AND newer.id > a.id)))"
+    )
+    fun observeLatestOrdinaryActivities(assistantIds: List<String>): Flow<List<AutonomousActivityEntity>>
+
     /** 全量统计本地日期的条数，不受明细分页大小限制。 */
     @Query(
         "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') AS day, COUNT(*) AS count " +

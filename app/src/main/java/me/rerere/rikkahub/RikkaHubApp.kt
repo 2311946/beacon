@@ -1,12 +1,23 @@
 package me.rerere.rikkahub
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.ComposeFoundationFlags
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.annotation.ExperimentalCoilApi
+import coil3.gif.AnimatedImageDecoder
+import coil3.gif.GifDecoder
+import coil3.network.cachecontrol.CacheControlCacheStrategy
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
+import okhttp3.OkHttpClient
 import androidx.compose.runtime.Composer
 import androidx.compose.runtime.tooling.ComposeStackTraceMode
 import androidx.core.app.NotificationChannelCompat
@@ -64,7 +75,27 @@ const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 const val PROACTIVE_MESSAGE_NOTIFICATION_CHANNEL_ID = "proactive_message"
 
-class RikkaHubApp : Application() {
+@OptIn(ExperimentalCoilApi::class)
+class RikkaHubApp : Application(), SingletonImageLoader.Factory {
+    override fun newImageLoader(context: Context): ImageLoader =
+        ImageLoader.Builder(context)
+            .crossfade(true)
+            .components {
+                add(
+                    OkHttpNetworkFetcherFactory(
+                        callFactory = { get<OkHttpClient>() },
+                        cacheStrategy = { CacheControlCacheStrategy() },
+                    )
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    add(AnimatedImageDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
+                add(SvgDecoder.Factory(scaleToDensity = true))
+            }
+            .build()
+
     override fun onCreate() {
         super.onCreate()
         Log.d("AutonomousWakeup", "[app-onCreate] wiring=v2 package=$packageName version=${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE} debug=${BuildConfig.DEBUG} pid=${android.os.Process.myPid()}")

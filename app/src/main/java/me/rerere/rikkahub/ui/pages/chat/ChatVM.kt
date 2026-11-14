@@ -139,8 +139,10 @@ class ChatVM(
         settings.getChatModelOf(conversation)
     }.stateIn(viewModelScope, SharingStarted.Lazily, settings.value.getChatModelOf(conversation.value))
 
-    // 错误状态
-    val errors: StateFlow<List<ChatError>> = chatService.errors
+    // 只显示通用错误及当前会话错误，避免群聊错误跑到单聊页面。
+    val errors: StateFlow<List<ChatError>> = combine(chatService.errors, conversation) { errors, current ->
+        errors.filter { it.conversationId == null || it.conversationId == current.id }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun dismissError(id: Uuid) = chatService.dismissError(id)
 

@@ -31,6 +31,13 @@ internal fun UIMessage.generatedAssistantStatus(): String? {
     }
 }
 
+/** 仅判断本轮触发消息；历史上的唤醒不能把后续普通聊天也排除。 */
+internal fun List<UIMessage>.shouldRecordOrdinaryActivity(): Boolean =
+    lastOrNull { it.role == MessageRole.USER }?.parts?.none {
+        (it.metadata?.get("beacon_event") as? JsonPrimitive)?.content in
+            setOf("autonomous_task", "autonomous_wakeup")
+    } == true
+
 /** preview 只处理展示副本；finish 从 raw 重新解析，在既有转换完成后写入 metadata。 */
 internal suspend fun UIMessage.transformAssistantStatusReply(
     newPartsFrom: Int,

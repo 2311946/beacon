@@ -31,6 +31,89 @@ import kotlin.uuid.Uuid
 
 class ConversationSessionTest {
     @Test
+    fun `group summary save failure never publishes proposed context`() = runBlocking {
+        val id = Uuid.random()
+        val original = Conversation.ofId(id).copy(title = "原状态")
+        val store = FakeConversationStore(original)
+        val session = ConversationSession(id, original, this, store, {})
+        session.initialize(load = { original })
+        try {
+            session.commitGroupSummary(session.incarnation, { it.copy(title = "未保存摘要") }, { error("磁盘写入失败") })
+            error("必须传播保存失败")
+        } catch (e: IllegalStateException) {
+            assertEquals("磁盘写入失败", e.message)
+        }
+        assertEquals(original, session.state.value)
+        assertEquals(original, store.persisted)
+    }
+
+    @Test
+    fun `group summary commit preserves concurrent unrelated changes and rejects changed sources`() = runBlocking {
+        val id = Uuid.random()
+        val original = Conversation.ofId(id).copy(title = "来源")
+        val session = ConversationSession(id, original, this, FakeConversationStore(original), {})
+        session.initialize(load = { original })
+        val begin = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val job = launch {
+            session.commitGroupSummary(session.incarnation, {
+                check(it.title == "来源") { "来源变了" }
+                it.copy(isPinned = true)
+            }, { begin.complete(Unit); finish.await() })
+        }
+        begin.await()
+        assertFalse(session.state.value.isPinned)
+        session.update { it.copy(folderId = id) }
+        finish.complete(Unit)
+        job.join()
+        assertTrue(session.state.value.isPinned)
+        assertEquals(id, session.state.value.folderId)
+        assertFalse(session.commitGroupSummary(session.incarnation + 1, { error("不应调用") }, { error("不应落库") }))
+    }
+
+    @Test
+    fun `source change during summary save rejects publication and restores stored config`() = runBlocking {
+        val id = Uuid.random()
+        val original = Conversation.ofId(id).copy(title = "旧来源")
+        val session = ConversationSession(id, original, this, FakeConversationStore(original), {})
+        session.initialize(load = { original })
+        var persisted = original
+        var firstSave = true
+        try {
+            session.commitGroupSummary(session.incarnation, {
+                check(it.title == "旧来源") { "来源已变化" }
+                it.copy(isPinned = true)
+            }, {
+                persisted = it
+                if (firstSave) {
+                    firstSave = false
+                    session.update { current -> current.copy(title = "已编辑来源") }
+                }
+            })
+            error("来源变化后不应成功")
+        } catch (e: IllegalStateException) {
+            assertEquals("来源已变化", e.message)
+        }
+        assertFalse(session.state.value.isPinned)
+        assertEquals("已编辑来源", session.state.value.title)
+        assertFalse(persisted.isPinned)
+    }
+
+    @Test
+    fun `conversation replace cancels tracked summary without occupying reply slot`() = runTest {
+        val id = Uuid.random()
+        val original = Conversation.ofId(id)
+        val session = ConversationSession(id, original, backgroundScope, FakeConversationStore(original), {})
+        session.initialize(load = { original })
+        val summary = backgroundScope.launch { awaitCancellation() }
+        session.trackAuxiliaryJob(summary)
+        assertFalse(session.isGenerating)
+        session.replace(original.copy(title = "恢复后的会话"), true) {}
+        assertTrue(summary.isCancelled)
+        assertEquals("恢复后的会话", session.state.value.title)
+    }
+
+    @Test
     fun `leaving and reopening a streaming chat keeps the registered request alive`() = runTest {
         val id = Uuid.random()
         val store = FakeConversationStore(Conversation.ofId(id))
