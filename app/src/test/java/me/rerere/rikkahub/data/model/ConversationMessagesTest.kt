@@ -148,7 +148,9 @@ class ConversationMessagesTest {
         assertEquals("call-1", marked.voiceCallIdOrNull())
         assertEquals(JsonPrimitive("sig"), marked.parts.first().metadata?.get("signature"))
         assertEquals(JsonPrimitive("聊天"), marked.parts.last().metadata?.get("beacon_current_status"))
-        assertEquals("hello", marked.toText())
+        // toText() 对非正文 part 保留换行；标记来源不能改变其原有文本投影。
+        assertEquals(source.toText(), marked.toText())
+        assertEquals("hello", marked.parts.filterIsInstance<UIMessagePart.Text>().single().text)
         assertNull(source.voiceCallIdOrNull())
         val restored = Json.decodeFromString<UIMessage>(Json.encodeToString(marked))
         assertEquals("call-1", restored.voiceCallIdOrNull())
@@ -170,6 +172,39 @@ class ConversationMessagesTest {
         assertEquals("语音通话消息", UIMessage.assistant("").voiceCallPreview())
         val preview = UIMessage.user("📞".repeat(80)).voiceCallPreview()
         assertEquals("📞".repeat(60) + "…", preview)
+    }
+
+    @Test
+    fun `consecutive call messages share one range without changing nodes`() {
+        val nodes = listOf(UIMessage.user("你好"), UIMessage.assistant("你好呀"), UIMessage.user("在做什么"))
+            .map { it.withVoiceCallMetadata("call-1").toMessageNode() }
+        val original = nodes.toList()
+        assertEquals(mapOf(0 to (0..2), 1 to (0..2), 2 to (0..2)), nodes.voiceCallRanges())
+        assertEquals(original, nodes)
+    }
+
+    @Test
+    fun `normal messages separate call cards and single call message counts as one`() {
+        val nodes = listOf(UIMessage.user("第一段").withVoiceCallMetadata("1"),
+            UIMessage.assistant("普通聊天"), UIMessage.user("第二段").withVoiceCallMetadata("2"))
+            .map { it.toMessageNode() }
+        assertEquals(mapOf(0 to (0..0), 2 to (2..2)), nodes.voiceCallRanges())
+        assertTrue(emptyList<MessageNode>().voiceCallRanges().isEmpty())
+    }
+
+    @Test
+    fun `adjacent calls merge by continuity even with different call ids`() {
+        val nodes = listOf(UIMessage.user("第一通").withVoiceCallMetadata("1"),
+            UIMessage.assistant("第二通").withVoiceCallMetadata("2")).map { it.toMessageNode() }
+        assertEquals(mapOf(0 to (0..1), 1 to (0..1)), nodes.voiceCallRanges())
+    }
+
+    @Test
+    fun `call ranges follow selected branch rather than alternate call message`() {
+        val call = UIMessage.user("通话").withVoiceCallMetadata("1")
+        val node = MessageNode(messages = listOf(call, UIMessage.user("文字")), selectIndex = 1)
+        assertTrue(listOf(node).voiceCallRanges().isEmpty())
+        assertEquals(mapOf(0 to (0..0)), listOf(node.copy(selectIndex = 0)).voiceCallRanges())
     }
 
     private fun conversationOf(vararg nodes: MessageNode) =

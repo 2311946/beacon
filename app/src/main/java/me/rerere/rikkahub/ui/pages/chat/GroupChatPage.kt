@@ -1,6 +1,19 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.rerere.ui.components.ListSelectableItem
+import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.data.model.Conversation
+import kotlin.uuid.Uuid
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,6 +55,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -77,6 +91,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.GroupSummaryStage
 import me.rerere.rikkahub.data.model.validGroupSummaryStages
+import me.rerere.rikkahub.data.model.voiceCallRanges
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.UsageBudgetBanner
@@ -121,6 +136,25 @@ fun GroupChatPage(
         ?: settings.findModelById(inputAssistant?.chatModelId, settings.chatModelId)
     val groupName = groupChat?.name?.ifBlank { "未命名群聊" } ?: "群聊"
     val listState = rememberLazyListState()
+    val previewListState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val layoutDirection = LocalLayoutDirection.current
+    var previewMode by rememberSaveable(groupId) { mutableStateOf(false) }
+    var showRecordMenu by remember(groupId) { mutableStateOf(false) }
+    val selectionState = remember(groupId) { ChatSelectionState() }
+    var exportConversation by remember(groupId) { mutableStateOf<Conversation?>(null) }
+    var exportMessages by remember(groupId) { mutableStateOf<List<UIMessage>>(emptyList()) }
+    var exportNames by remember(groupId) { mutableStateOf<Map<Uuid, String>>(emptyMap()) }
+    var exportTitle by remember(groupId) { mutableStateOf("") }
+    val previewProgress = rememberPreviewSwipeProgress(previewMode, groupId)
+    val currentPreviewMode by rememberUpdatedState(previewMode)
+    val currentSelecting by rememberUpdatedState(selectionState.selecting)
+    val overviewVisible by rememberUpdatedState(previewProgress.value > 0f)
+    BackHandler(previewMode && !selectionState.selecting) { previewMode = false }
+    LaunchedEffect(groupId) {
+        selectionState.cancel()
+        exportConversation = null
+    }
     val hazeState = rememberHazeState()
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
@@ -128,12 +162,17 @@ fun GroupChatPage(
     val keyboardController = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
     val nodes = conversation?.messageNodes.orEmpty()
-    val archivedStageIds = conversation?.config?.groupSummaryArchive.orEmpty().map { it.id }.toSet()
-    val summaryStages = (conversation?.config?.groupSummaryArchive.orEmpty() +
-        conversation?.config?.groupSummaryStages.orEmpty()).distinctBy { it.id }
-    val validSummaryStageIds = remember(conversation) {
-        conversation?.validGroupSummaryStages().orEmpty().map { it.id }.toSet()
+    val currentNodes by rememberUpdatedState(nodes)
+    val currentExportConversation by rememberUpdatedState(exportConversation)
+    val callRanges = remember(nodes) { nodes.voiceCallRanges() }
+    val expandedCalls = remember(groupId) { mutableStateMapOf<Uuid, Boolean>() }
+    val pendingCallRanges = remember(nodes, callRanges) {
+        callRanges.values.distinct().filter { range ->
+            range.any { nodes[it].currentMessage.getTools().any { tool -> tool.isPending } }
+        }.map { it.first }.toSet()
     }
+    // 聊天流只提示当前有效总结；归档和失效内容移至群设置的历史总结。
+    val summaryStages = remember(conversation) { conversation?.validGroupSummaryStages().orEmpty() }
     val summaryKeepRecentMessages = (groupChat?.resolved(settings.groupChatDefaults)
         ?: settings.groupChatDefaults).summaryKeepRecentMessages.coerceIn(0, 50)
     val canSummarize = groupChat != null && conversation != null && nodes.isNotEmpty() &&
@@ -143,7 +182,7 @@ fun GroupChatPage(
     val speakerMap = conversation?.config?.speakerMap.orEmpty()
     val generatingState by rememberUpdatedState(isGenerating)
     val lastContentIndex by rememberUpdatedState(
-        nodes.size + summaryStages.size + (if (summaryStages.isNotEmpty()) 1 else 0) +
+        nodes.size + summaryStages.size +
             (if (isGenerating || awaitingManualSpeaker) 1 else 0)
     )
     var showSummaryDialog by rememberSaveable(groupId) { mutableStateOf(false) }
@@ -154,12 +193,16 @@ fun GroupChatPage(
         onAttachmentAdded = { showAttachments = false },
     )
 
+    LaunchedEffect(nodes) {
+        selectionState.selectedItems.retainAll(nodes.map { it.id }.toSet())
+    }
     LaunchedEffect(groupId, nodes.size, summaryStages.size, isSummarizing) {
-        if (nodes.isNotEmpty() || summaryStages.isNotEmpty()) {
+        if (!overviewVisible && !selectionState.selecting && exportConversation == null && (nodes.isNotEmpty() || summaryStages.isNotEmpty())) {
             listState.requestScrollToItem(lastContentIndex)
         }
     }
-    ImeLazyListAutoScroller(lazyListState = listState)
+    ImeLazyListAutoScroller(lazyListState = listState,
+        enabled = !overviewVisible && !selectionState.selecting && exportConversation == null)
 
     LaunchedEffect(awaitingManualSpeaker) {
         if (awaitingManualSpeaker) {
@@ -221,6 +264,34 @@ fun GroupChatPage(
                         }
                     },
                     actions = {
+                        Box {
+                            TextButton(onClick = { showRecordMenu = true }) { Text(if (previewMode) "地图" else "记录") }
+                            DropdownMenu(expanded = showRecordMenu, onDismissRequest = { showRecordMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (previewMode) "返回聊天" else "对话地图") },
+                                    enabled = nodes.isNotEmpty(),
+                                    onClick = {
+                                        showRecordMenu = false
+                                        selectionState.cancel()
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
+                                        previewMode = !previewMode
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("导出记录") },
+                                    enabled = nodes.isNotEmpty(),
+                                    onClick = {
+                                        showRecordMenu = false
+                                        previewMode = false
+                                        showAttachments = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
+                                        selectionState.start(nodes.map { it.id })
+                                    },
+                                )
+                            }
+                        }
                         TextButton(
                             onClick = {
                                 focusManager.clearFocus(force = true)
@@ -288,7 +359,7 @@ fun GroupChatPage(
                         val lastItem = visibleItems.lastOrNull() ?: return@collect
                         val inputBarHeight = with(density) { innerPadding.calculateBottomPadding().toPx() }
                         val inputTop = listState.layoutInfo.viewportEndOffset - inputBarHeight.roundToInt()
-                        if (!listState.isScrollInProgress && generatingState &&
+                        if (!overviewVisible && !currentSelecting && currentExportConversation == null && !listState.isScrollInProgress && generatingState &&
                             lastItem.offset + lastItem.size <= inputTop - 8
                         ) {
                             listState.requestScrollToItem(lastContentIndex)
@@ -298,10 +369,28 @@ fun GroupChatPage(
             }
             CompositionLocalProvider(LocalSettings provides groupSettings) {
                 ChatFontProvider(displaySetting = settings.displaySetting) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().clipToBounds().previewSwipeGesture(
+                            progress = previewProgress,
+                            scope = scope,
+                            layoutDirection = layoutDirection,
+                            canEnterPreview = { currentNodes.isNotEmpty() && !currentSelecting && currentExportConversation == null },
+                            isPreviewMode = { currentPreviewMode },
+                            onPreviewModeChange = {
+                                previewMode = it
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
+                            }
+                        ),
+                    ) {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
+                                .graphicsLayer {
+                                    val sign = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
+                                    translationX = -previewProgress.value * size.width * sign
+                                    alpha = 1f - previewProgress.value
+                                }
                                 .groupChatTopFadingEdge(innerPadding.calculateTopPadding() + 24.dp)
                                 .hazeSource(hazeState),
                         state = listState,
@@ -310,9 +399,25 @@ fun GroupChatPage(
                             bottom = 32.dp + innerPadding.calculateBottomPadding(),
                         ),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.Top,
                     ) {
                         itemsIndexed(nodes, key = { _, node -> node.id }) { index, node ->
+                            val callRange = callRanges[index]
+                            val callKey = callRange?.let { nodes[it.first].id }
+                            val expanded = callKey != null && expandedCalls[callKey] == true
+                            val needsApproval = callRange?.first in pendingCallRanges
+                            val detailsVisible = callRange == null || expanded || selectionState.selecting || needsApproval
+                            val headerVisible = callRange != null && index == callRange.first && !selectionState.selecting
+                            Column(
+                                modifier = if (detailsVisible || headerVisible) Modifier.padding(bottom = 12.dp) else Modifier,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                            if (headerVisible) {
+                                VoiceCallGroupHeader(node.currentMessage, checkNotNull(callRange).count(), expanded || needsApproval) {
+                                    expandedCalls[checkNotNull(callKey)] = !expanded
+                                }
+                            }
+                            if (detailsVisible) {
                             val message = node.messages.getOrNull(node.selectIndex) ?: return@itemsIndexed
                             val speaker = if (message.role == MessageRole.ASSISTANT) {
                                 speakerMap[message.id]?.let(assistantsById::get)
@@ -327,6 +432,15 @@ fun GroupChatPage(
                             }
                             val senderAvatar = if (isUser) settings.displaySetting.userAvatar
                                 else speaker?.avatar ?: Avatar.Dummy
+                            ListSelectableItem(
+                                key = node.id,
+                                selectedKeys = selectionState.selectedItems,
+                                enabled = selectionState.selecting,
+                                onSelectChange = {
+                                    if (node.id in selectionState.selectedItems) selectionState.selectedItems.remove(node.id)
+                                    else selectionState.selectedItems.add(node.id)
+                                },
+                            ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -371,40 +485,34 @@ fun GroupChatPage(
                                         onFork = {},
                                         onRegenerate = { vm.regenerate(message) },
                                         onEdit = {},
-                                        onShare = {},
+                                        onShare = {
+                                            previewMode = false
+                                            focusManager.clearFocus(force = true)
+                                            keyboardController?.hide()
+                                            selectionState.start(nodes.take(index + 1).map { it.id })
+                                        },
                                         onDelete = { vm.deleteMessage(message) },
                                         onUpdate = { vm.selectNode(it.id, it.selectIndex) },
                                         onToggleFavorite = null,
                                         onTranslate = null,
+                                        showVoiceCallDetails = callRange != null,
                                     )
                                 }
                                 if (showAvatar && isUser) {
                                     GroupMessageAvatar(senderName, senderAvatar)
                                 }
                             }
+                            }
+                            }
+                            }
                         }
-                        if (summaryStages.isNotEmpty()) {
-                            item(key = "groupSummaryHeader") {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Text("阶段总结", style = MaterialTheme.typography.titleSmallEmphasized)
-                                    Text(
-                                        "仅作为当前会话资料，不是角色发言。原始聊天记录仍完整保留。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            itemsIndexed(summaryStages, key = { _, stage -> stage.id }) { index, stage ->
-                                GroupSummaryStageCard(
-                                    stage = stage,
-                                    stageNumber = index + 1,
-                                    valid = stage.id in validSummaryStageIds,
-                                    archived = stage.id in archivedStageIds,
-                                )
-                            }
+                        itemsIndexed(summaryStages, key = { _, stage -> "summary-${stage.id}" }) { _, stage ->
+                            Text(
+                                text = "已总结 · ${stage.sourceMessageIds.size}条消息 · ${stage.topics.size}个主题",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+                            )
                         }
                         if (isSummarizing) {
                             item(key = "summarizing") {
@@ -456,6 +564,51 @@ fun GroupChatPage(
                             Spacer(Modifier.fillMaxWidth().height(5.dp))
                         }
                     }
+                    if (previewProgress.value > 0f) {
+                        conversation?.let { record ->
+                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                val sign = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
+                                translationX = (1f - previewProgress.value) * size.width * sign
+                                alpha = 0.4f + previewProgress.value * 0.6f
+                            }) {
+                                ChatListPreview(
+                                    innerPadding = innerPadding,
+                                    conversation = record,
+                                    chatListState = listState,
+                                    listState = previewListState,
+                                    settings = settings,
+                                    hazeState = hazeState,
+                                    groupMode = true,
+                                    onJumpToMessage = { index ->
+                                        previewMode = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
+                                        if (index in currentNodes.indices) {
+                                            val target = currentNodes.voiceCallRanges()[index]?.first ?: index
+                                            listState.requestScrollToItem(target)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    ChatSelectionToolbar(
+                        state = selectionState,
+                        allIds = nodes.map { it.id },
+                        onConfirm = {
+                            conversation?.let { record ->
+                                val selected = record.messageNodes.filter { it.id in selectionState.selectedItems }
+                                if (selected.isNotEmpty()) {
+                                    exportConversation = record
+                                    exportMessages = selected.map { it.currentMessage }
+                                    exportNames = record.chatRecordSenderNames(settings, groupMode = true)
+                                    exportTitle = groupName
+                                    selectionState.selecting = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(innerPadding).offset(y = (-48).dp),
+                    )
                     conversationLoadError?.let { error ->
                         Text(
                             text = error,
@@ -473,6 +626,22 @@ fun GroupChatPage(
                 }
             }
         }
+        }
+        // 保持结果接收器在群页面中注册，面板状态重建后仍可接收系统保存结果。
+        conversation?.let { current ->
+            ChatExportSheet(
+                visible = exportConversation != null,
+                onDismissRequest = {
+                    exportConversation = null
+                    exportMessages = emptyList()
+                    exportNames = emptyMap()
+                    selectionState.cancel()
+                },
+                conversation = exportConversation ?: current,
+                selectedMessages = exportMessages,
+                senderNames = exportNames,
+                title = exportTitle,
+            )
         }
         if (awaitingManualSpeaker) {
             ModalBottomSheet(
@@ -604,7 +773,7 @@ private fun GroupSummaryDialog(
 }
 
 @Composable
-private fun GroupSummaryStageCard(stage: GroupSummaryStage, stageNumber: Int, valid: Boolean, archived: Boolean) {
+internal fun GroupSummaryStageCard(stage: GroupSummaryStage, stageNumber: Int, valid: Boolean, archived: Boolean) {
     var expanded by rememberSaveable(stage.id.toString()) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),

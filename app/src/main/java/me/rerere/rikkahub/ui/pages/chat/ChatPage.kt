@@ -76,6 +76,7 @@ import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.voiceCallRanges
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
@@ -278,7 +279,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
             if (nodeId != null) {
                 val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
                 if (index >= 0) {
-                    chatListState.scrollToItem(index)
+                    val callRange = conversation.messageNodes.voiceCallRanges()[index]
+                    chatListState.scrollToItem(callRange?.first ?: index)
                 }
             } else {
                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
@@ -386,7 +388,12 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
-    var previewMode by rememberSaveable { mutableStateOf(false) }
+    var previewMode by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    val previewListState = rememberLazyListState()
+    val selectionState = remember(conversation.id) { ChatSelectionState() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    BackHandler(previewMode && !selectionState.selecting) { previewMode = false }
     val hazeState = rememberHazeState()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -432,7 +439,17 @@ private fun ChatPageContent(
                         navigateToChatPage(navController)
                     },
                     onClickMenu = {
+                        selectionState.cancel()
                         previewMode = !previewMode
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                    },
+                    onExport = {
+                        previewMode = false
+                        showFilesSheet = false
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        selectionState.start(conversation.messageNodes.map { it.id })
                     },
                     onOpenActivityLog = {
                         navController.navigate(Screen.AutonomousActivity(assistant.id.toString()))
@@ -523,6 +540,13 @@ private fun ChatPageContent(
                 innerPadding = innerPadding,
                 conversation = conversation,
                 state = chatListState,
+                previewListState = previewListState,
+                selectionState = selectionState,
+                onPreviewModeChange = {
+                    previewMode = it
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                },
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
                 previewMode = previewMode,
@@ -567,7 +591,9 @@ private fun ChatPageContent(
                 },
                 onJumpToMessage = { index ->
                     previewMode = false
-                    scope.launch {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    if (index in conversation.messageNodes.indices) {
                         chatListState.requestScrollToItem(index)
                     }
                 },
@@ -688,6 +714,7 @@ private fun TopBar(
     bigScreen: Boolean,
     previewMode: Boolean,
     onClickMenu: () -> Unit,
+    onExport: () -> Unit,
     onNewChat: () -> Unit,
     onOpenActivityLog: () -> Unit,
     onOpenCalendar: () -> Unit,
@@ -699,6 +726,7 @@ private fun TopBar(
         onUpdateTitle(it)
     }
     var showTitleMenu by remember(assistant.id, conversation.id) { mutableStateOf(false) }
+    var showRecordMenu by remember(conversation.id) { mutableStateOf(false) }
 
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -800,12 +828,22 @@ private fun TopBar(
             ) {
                 Icon(HugeIcons.Clock01, contentDescription = "活动记录")
             }
-            IconButton(
-                onClick = {
-                    onClickMenu()
+            Box {
+                IconButton(onClick = { showRecordMenu = true }) {
+                    Icon(HugeIcons.LeftToRightListBullet, "对话菜单")
                 }
-            ) {
-                Icon(if (previewMode) HugeIcons.Cancel01 else HugeIcons.LeftToRightListBullet, "Chat Options")
+                DropdownMenu(expanded = showRecordMenu, onDismissRequest = { showRecordMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (previewMode) "返回聊天" else "对话地图") },
+                        enabled = conversation.messageNodes.isNotEmpty(),
+                        onClick = { showRecordMenu = false; onClickMenu() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导出记录") },
+                        enabled = conversation.messageNodes.isNotEmpty(),
+                        onClick = { showRecordMenu = false; onExport() },
+                    )
+                }
             }
 
             IconButton(

@@ -18,6 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.BasicAlertDialog
+import me.rerere.rikkahub.data.model.validGroupSummaryStages
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
@@ -71,6 +76,16 @@ fun GroupChatSettingsPage(
 ) {
     val settings by vm.settings.collectAsState()
     val memberActivities by vm.memberActivities.collectAsStateWithLifecycle()
+    val summaryConversation by vm.summaryConversation.collectAsStateWithLifecycle()
+    val historyStages = remember(summaryConversation) {
+        (summaryConversation?.config?.groupSummaryArchive.orEmpty() +
+            summaryConversation?.config?.groupSummaryStages.orEmpty()).distinctBy { it.id }
+    }
+    val validHistoryIds = remember(summaryConversation) {
+        summaryConversation?.validGroupSummaryStages().orEmpty().map { it.id }.toSet()
+    }
+    val archivedHistoryIds = summaryConversation?.config?.groupSummaryArchive.orEmpty().map { it.id }.toSet()
+    var showSummaryHistory by rememberSaveable(groupId) { mutableStateOf(false) }
     val current = vm.draftGroup
     val isGlobal = vm.isGlobal
     val config = if (isGlobal) vm.draftDefaults else current?.resolved(settings.groupChatDefaults) ?: settings.groupChatDefaults
@@ -268,6 +283,25 @@ fun GroupChatSettingsPage(
                     }
                 }
             }
+            if (!isGlobal && current != null) {
+                item("summary_history") {
+                    CardGroup {
+                        item(
+                            onClick = { showSummaryHistory = true },
+                            headlineContent = { Text("历史总结") },
+                            supportingContent = {
+                                Text(when {
+                                    vm.summaryHistoryLoading -> "正在加载…"
+                                    vm.summaryHistoryError != null -> "加载失败，点击查看"
+                                    historyStages.isEmpty() -> "暂无历史总结"
+                                    else -> "${historyStages.size} 份记录 · 可展开查看主题全文与历史版本"
+                                })
+                            },
+                            trailingContent = { Text("查看") },
+                        )
+                    }
+                }
+            }
             item("auto_summary") {
                 CardGroup(title = { Text("自动总结") }) {
                     formItem(
@@ -421,6 +455,50 @@ fun GroupChatSettingsPage(
                             }
                         },
                     )
+                }
+            }
+        }
+    }
+
+    if (showSummaryHistory && !isGlobal) {
+        BasicAlertDialog(onDismissRequest = { showSummaryHistory = false }) {
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("历史总结", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "仅用于当前群聊，原始消息仍完整保留。展开阶段与主题可查看全文。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).weight(1f, fill = false),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (vm.summaryHistoryLoading) {
+                            item { Text("正在加载…") }
+                        } else if (vm.summaryHistoryError != null) {
+                            item { Text(vm.summaryHistoryError.orEmpty(), color = MaterialTheme.colorScheme.error) }
+                        } else if (historyStages.isEmpty()) {
+                            item { Text("暂无历史总结", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                        itemsIndexed(historyStages, key = { _, stage -> stage.id }) { index, stage ->
+                            GroupSummaryStageCard(
+                                stage = stage,
+                                stageNumber = index + 1,
+                                valid = stage.id in validHistoryIds,
+                                archived = stage.id in archivedHistoryIds,
+                            )
+                        }
+                    }
+                    TextButton(onClick = { showSummaryHistory = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("关闭")
+                    }
                 }
             }
         }

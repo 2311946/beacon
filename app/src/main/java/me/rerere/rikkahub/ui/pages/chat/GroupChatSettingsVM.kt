@@ -10,7 +10,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import me.rerere.rikkahub.data.model.Conversation
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import me.rerere.rikkahub.data.db.entity.AutonomousActivityEntity
@@ -55,6 +59,39 @@ class GroupChatSettingsVM(
     val groupChat: StateFlow<GroupChat?> = settingsStore.settingsFlow
         .map { settings -> settings.groupChats.firstOrNull { it.id == groupUuid } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    var summaryHistoryError by mutableStateOf<String?>(null)
+        private set
+    var summaryHistoryLoading by mutableStateOf(false)
+        private set
+
+    // 读取运行中的session，不用数据库旧快照覆盖正在生成的消息；订阅随页面生命周期释放。
+    val summaryConversation: StateFlow<Conversation?> = groupChat
+        .map { it?.conversationId }
+        .distinctUntilChanged()
+        .flatMapLatest { id ->
+            flow<Conversation?> {
+                summaryHistoryError = null
+                summaryHistoryLoading = id != null
+                emit(null)
+                if (id == null) return@flow
+                chatService.addConversationReference(id)
+                try {
+                    chatService.ensureLoaded(id)
+                    summaryHistoryLoading = false
+                    emitAll(chatService.getConversationFlow(id))
+                } finally {
+                    chatService.removeConversationReference(id)
+                    summaryHistoryLoading = false
+                }
+            }.catch { e ->
+                if (e is CancellationException) throw e
+                summaryHistoryLoading = false
+                summaryHistoryError = e.message ?: "历史总结加载失败"
+                emit(null)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // 观察可选角色，未保存的新加入成员也能立即展示其已有活动；全局设置不订阅数据库。
     val memberActivities: StateFlow<Map<Uuid, AutonomousActivityEntity>> = settings

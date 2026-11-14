@@ -51,6 +51,24 @@ internal fun Conversation.withTranslation(messageId: Uuid, translation: String?)
     return upsertMessage(node.id, node.messages.first { it.id == messageId }.copy(translation = translation))
 }
 
+/** 连续通话的 UI 范围；保留原始索引，不改消息或数据库。普通消息切断连续区间。 */
+internal fun List<MessageNode>.voiceCallRanges(): Map<Int, IntRange> {
+    val result = mutableMapOf<Int, IntRange>()
+    var start = 0
+    while (start < size) {
+        if (!this[start].currentMessage.isVoiceCallMessage()) {
+            start++
+            continue
+        }
+        var end = start
+        while (end + 1 < size && this[end + 1].currentMessage.isVoiceCallMessage()) end++
+        val range = start..end
+        range.forEach { result[it] = range }
+        start = end + 1
+    }
+    return result
+}
+
 /** 切换节点选中的分支，调用方负责校验节点和下标 */
 internal fun Conversation.selectBranch(nodeId: Uuid, selectIndex: Int): Conversation = copy(
     messageNodes = messageNodes.map { node ->

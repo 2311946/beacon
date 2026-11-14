@@ -137,6 +137,7 @@ fun ChatMessage(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     showMessageHeader: Boolean = true,
+    showVoiceCallDetails: Boolean = false,
     onGenerateImage: ((UIMessage) -> Unit)? = null,
 ) {
     val message = node.messages[node.selectIndex]
@@ -286,7 +287,7 @@ fun ChatMessage(
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (isVoiceCall) {
+        if (isVoiceCall && !showVoiceCallDetails) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -317,7 +318,7 @@ fun ChatMessage(
                 }
             }
         }
-        if (!isVoiceCall || voiceCallExpanded || needsApproval) {
+        if (!isVoiceCall || voiceCallExpanded || needsApproval || showVoiceCallDetails) {
             if (showMessageHeader && !message.parts.isEmptyUIMessage()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

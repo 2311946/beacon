@@ -6,6 +6,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.descriptors.elementNames
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
@@ -34,6 +35,39 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class SettingsFieldsTest {
+    @Test
+    fun `stored favorite models are filtered and deduplicated in first occurrence order`() {
+        val first = Model(id = id(101))
+        val second = Model(id = id(102))
+        val missing = id(103)
+        val settings = Settings(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(first, second))),
+            favoriteModels = listOf(missing, second.id, first.id, second.id, missing, first.id),
+        )
+        val preferences = mutablePreferencesOf().apply { putSettings(settings) }
+
+        val restored = preferences.toSettings().normalized()
+
+        assertEquals(listOf(second.id, first.id), restored.favoriteModels)
+        assertEquals(restored, restored.normalized())
+    }
+
+    @Test
+    fun `normalizing updated favorites removes duplicates without changing reordered or empty favorites`() {
+        val first = Model(id = id(101))
+        val second = Model(id = id(102))
+        val third = Model(id = id(103))
+        val settings = Settings(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(first, second, third))),
+            favoriteModels = listOf(third.id, first.id, second.id),
+        )
+
+        assertEquals(settings.favoriteModels, settings.normalized().favoriteModels)
+        val updated = settings.copy(favoriteModels = settings.favoriteModels + first.id + third.id)
+        assertEquals(settings.favoriteModels, updated.normalized().favoriteModels)
+        assertEquals(emptyList<Uuid>(), settings.copy(favoriteModels = emptyList()).normalized().favoriteModels)
+    }
+
     @Test
     fun `calendar is opt in and persists independently per assistant`() {
         assertFalse(Assistant().enableCalendar)
