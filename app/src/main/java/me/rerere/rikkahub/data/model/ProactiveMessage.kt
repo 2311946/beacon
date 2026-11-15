@@ -174,6 +174,40 @@ internal fun wakeupTaskStatus(
     return if (tools.all { it.startedAt != null && it.finishedAt != null && it.isExecuted }) "completed" else "not_executed"
 }
 
+/** 聊天展示投影：旧内部事件只显示提示，新直接交付消息同时保留正常正文。 */
+internal data class WakeupMessagePresentation(
+    val assistantName: String?,
+    val reason: String,
+    val fullReason: String?,
+    val decisionContent: String?,
+    val internalPrompt: String?,
+    val showMessageBody: Boolean,
+)
+
+internal fun UIMessage.wakeupMessagePresentation(): WakeupMessagePresentation? {
+    if (role != MessageRole.USER && role != MessageRole.ASSISTANT) return null
+    val text = if (role == MessageRole.USER) {
+        parts.singleOrNull() as? UIMessagePart.Text
+    } else {
+        parts.filterIsInstance<UIMessagePart.Text>().firstOrNull {
+            (it.metadata?.get("beacon_event") as? JsonPrimitive)?.content == "autonomous_wakeup"
+        }
+    } ?: return null
+    val metadata = text.metadata ?: return null
+    if ((metadata["beacon_event"] as? JsonPrimitive)?.content != "autonomous_wakeup") return null
+    fun field(name: String): String? = (metadata[name] as? JsonPrimitive)
+        ?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+    return WakeupMessagePresentation(
+        assistantName = field("assistant_name"),
+        reason = field("reason") ?: "想和你聊聊",
+        fullReason = field("full_reason"),
+        decisionContent = field("decision_content"),
+        // 直接交付的 Text 是对用户说的正文，不是发给角色的内部提示。
+        internalPrompt = if (role == MessageRole.USER) text.text.takeIf { it.isNotBlank() } else null,
+        showMessageBody = role == MessageRole.ASSISTANT,
+    )
+}
+
 internal fun UIMessage.isWakeupTask(): Boolean = role == MessageRole.USER &&
     ((parts.singleOrNull() as? UIMessagePart.Text)?.metadata?.get("beacon_event") as? JsonPrimitive)?.content == "autonomous_task"
 

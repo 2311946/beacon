@@ -91,6 +91,8 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.isVoiceCallMessage
 import me.rerere.rikkahub.data.model.voiceCallPreview
+import me.rerere.rikkahub.data.model.WakeupMessagePresentation
+import me.rerere.rikkahub.data.model.wakeupMessagePresentation
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.rikkahub.utils.toMessageTimeString
 import me.rerere.rikkahub.data.model.replaceRegexes
@@ -188,71 +190,14 @@ fun ChatMessage(
         }
         return
     }
-    val wakeupMetadata = (message.parts.singleOrNull() as? UIMessagePart.Text)?.metadata
-    if (message.role == MessageRole.USER &&
-        (wakeupMetadata?.get("beacon_event") as? JsonPrimitive)?.content == "autonomous_wakeup"
-    ) {
-        val assistantName = (wakeupMetadata?.get("assistant_name") as? JsonPrimitive)?.content
-            ?.takeIf { it.isNotBlank() } ?: assistant?.name?.takeIf { it.isNotBlank() } ?: "角色"
-        val reason = (wakeupMetadata?.get("reason") as? JsonPrimitive)?.content
-            ?.takeIf { it.isNotBlank() } ?: "想和你聊聊"
-        var expanded by androidx.compose.runtime.saveable.rememberSaveable(message.id.toString()) {
-            mutableStateOf(false)
-        }
-        val fullReason = (wakeupMetadata?.get("full_reason") as? JsonPrimitive)?.content
-            ?.takeIf { it.isNotBlank() }
-        val decisionContent = (wakeupMetadata?.get("decision_content") as? JsonPrimitive)?.content
-            ?.takeIf { it.isNotBlank() }
-        val savedPrompt = (message.parts.singleOrNull() as? UIMessagePart.Text)?.text.orEmpty()
-        Column(modifier = modifier.fillMaxWidth()) {
-            Text(
-                text = "💤 ${assistantName}主动找你了 · $reason ${if (expanded) "▴" else "▾"}",
-                modifier = Modifier.fillMaxWidth()
-                    .clickable(onClickLabel = if (expanded) "收起唤醒决策" else "展开唤醒决策") {
-                        expanded = !expanded
-                    }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                color = Color.Gray,
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
-            AnimatedVisibility(visible = expanded) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                ) {
-                    androidx.compose.foundation.text.selection.SelectionContainer {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text("唤醒决策", style = MaterialTheme.typography.labelMedium)
-                            if (fullReason != null) {
-                                Text("联系理由：$fullReason", style = MaterialTheme.typography.bodySmall)
-                            }
-                            if (decisionContent != null) {
-                                Text("模型返回的决策：", style = MaterialTheme.typography.labelSmall)
-                                Text(decisionContent, style = MaterialTheme.typography.bodySmall)
-                            } else {
-                                Text(
-                                    "此历史消息未保存完整决策原文，以下为当时保留在上下文中的内容。",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (savedPrompt.isNotBlank()) {
-                                Text("发给角色的内部提示：", style = MaterialTheme.typography.labelSmall)
-                                Text(savedPrompt, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    val wakeupPresentation = message.wakeupMessagePresentation()
+    if (wakeupPresentation != null && !wakeupPresentation.showMessageBody) {
+        WakeupMessageNotice(
+            presentation = wakeupPresentation,
+            messageId = message.id.toString(),
+            fallbackAssistantName = assistant?.name,
+            modifier = modifier,
+        )
         return
     }
     if (message.isContextCheckpoint) {
@@ -287,6 +232,13 @@ fun ChatMessage(
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        if (wakeupPresentation != null) {
+            WakeupMessageNotice(
+                presentation = wakeupPresentation,
+                messageId = message.id.toString(),
+                fallbackAssistantName = assistant?.name,
+            )
+        }
         if (isVoiceCall && !showVoiceCallDetails) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -450,6 +402,70 @@ fun ChatMessage(
 
 // 思考链折叠时默认保留的尾部步骤数
 private const val COLLAPSED_VISIBLE_STEPS = 2
+
+@Composable
+private fun WakeupMessageNotice(
+    presentation: WakeupMessagePresentation,
+    messageId: String,
+    fallbackAssistantName: String?,
+    modifier: Modifier = Modifier,
+) {
+    val assistantName = presentation.assistantName
+        ?: fallbackAssistantName?.takeIf { it.isNotBlank() } ?: "角色"
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable(messageId) {
+        mutableStateOf(false)
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "💤 ${assistantName}主动找你了 · ${presentation.reason} ${if (expanded) "▴" else "▾"}",
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClickLabel = if (expanded) "收起唤醒决策" else "展开唤醒决策") {
+                    expanded = !expanded
+                }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+        AnimatedVisibility(visible = expanded) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("唤醒决策", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "联系理由：${presentation.fullReason ?: presentation.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (presentation.decisionContent != null) {
+                            Text("模型返回的决策：", style = MaterialTheme.typography.labelSmall)
+                            Text(presentation.decisionContent, style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text(
+                                "此历史消息未保存完整决策原文。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (presentation.internalPrompt != null) {
+                            Text("发给角色的内部提示：", style = MaterialTheme.typography.labelSmall)
+                            Text(presentation.internalPrompt, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(FlowPreview::class)
 @Composable

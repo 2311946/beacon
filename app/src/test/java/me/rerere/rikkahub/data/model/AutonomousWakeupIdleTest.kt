@@ -93,6 +93,66 @@ class AutonomousWakeupIdleTest {
         assertNull(conversation.withDeliveredWakeup(UIMessage.assistant(""), owner, lastMessage.id))
     }
 
+    @Test fun directWakeupNoticePreservesAssistantBodyAndSavedDecisionAfterReload() {
+        val body = "忙完了吗？"
+        val message = UIMessage.assistant(body).copy(parts = listOf(UIMessagePart.Text(body, buildJsonObject {
+            put("beacon_event", "autonomous_wakeup")
+            put("assistant_name", "角色甲")
+            put("reason", "关心进展")
+            put("full_reason", "想问问你今天的事情是否顺利")
+            put("decision_content", "原始决策")
+        })))
+        val json = kotlinx.serialization.json.Json
+        val restored = json.decodeFromString(UIMessage.serializer(), json.encodeToString(UIMessage.serializer(), message))
+        val presentation = restored.wakeupMessagePresentation()!!
+        assertTrue(presentation.showMessageBody)
+        assertEquals("角色甲", presentation.assistantName)
+        assertEquals("关心进展", presentation.reason)
+        assertEquals("想问问你今天的事情是否顺利", presentation.fullReason)
+        assertEquals("原始决策", presentation.decisionContent)
+        assertNull(presentation.internalPrompt)
+        assertEquals(message, restored)
+        assertEquals(body, (restored.parts.single() as UIMessagePart.Text).text)
+    }
+
+    @Test fun legacyWakeupNoticeRetainsInternalPromptWithoutRenderingItAsNormalBody() {
+        val message = wakeupEvent()
+        val presentation = message.wakeupMessagePresentation()!!
+        assertFalse(presentation.showMessageBody)
+        assertEquals("内部唤醒提示", presentation.internalPrompt)
+        assertEquals("想和你聊聊", presentation.reason)
+        assertNull(presentation.assistantName)
+        assertNull(presentation.fullReason)
+        assertNull(presentation.decisionContent)
+        assertEquals("内部唤醒提示", (message.parts.single() as UIMessagePart.Text).text)
+    }
+
+    @Test fun ordinaryMessagesAndTaskEventsDoNotAcquireWakeupNotice() {
+        assertNull(UIMessage.user("自主唤醒").wakeupMessagePresentation())
+        assertNull(UIMessage.assistant("主动找你了").wakeupMessagePresentation())
+        assertNull(wakeupEvent("autonomous_task").wakeupMessagePresentation())
+        assertNull(wakeupEvent().copy(role = me.rerere.ai.core.MessageRole.SYSTEM).wakeupMessagePresentation())
+        assertNull(wakeupEvent().copy(parts = listOf(UIMessagePart.Text("正文", buildJsonObject {
+            put("beacon_event", "attachment")
+        }))).wakeupMessagePresentation())
+    }
+
+    @Test fun assistantWakeupNoticeSupportsAdditionalPartsWithoutMislabelingBodyAsPrompt() {
+        val source = wakeupEvent().parts.single() as UIMessagePart.Text
+        val message = UIMessage.assistant("").copy(parts = listOf(
+            UIMessagePart.Text("普通段落"),
+            source.copy(text = "实际正文"),
+            UIMessagePart.Image("content://test/image"),
+        ))
+        val before = message.copy()
+        val presentation = message.wakeupMessagePresentation()!!
+        assertTrue(presentation.showMessageBody)
+        assertNull(presentation.internalPrompt)
+        assertEquals(before, message)
+        // 旧USER事件保持严格的单Text识别，避免意外吞掉用户附件。
+        assertNull(message.copy(role = me.rerere.ai.core.MessageRole.USER).wakeupMessagePresentation())
+    }
+
     @Test fun deliveredMessageRemainsSentWhenActivityAndStatusFail() = runBlocking<Unit> {
         val outcomes = mutableListOf<String>()
         val failures = mutableListOf<String>()
