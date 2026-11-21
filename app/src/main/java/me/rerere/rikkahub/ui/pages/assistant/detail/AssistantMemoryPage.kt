@@ -54,6 +54,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.MemoryEmbeddingSettings
 import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.groupByDirectory
 import me.rerere.rikkahub.data.model.memoryTitleOf
@@ -96,6 +97,7 @@ fun AssistantMemoryPage(id: String) {
         }
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val memoryState = vm.memoryState.collectAsStateWithLifecycle().value
     val memoryId = memoryState.namespace
     val viewingGlobalMemory = memoryState.isGlobal
@@ -184,8 +186,10 @@ fun AssistantMemoryPage(id: String) {
 
                     MemoryTab.SETTINGS -> MemorySettingsTab(
                         assistant = assistant,
+                        memoryEmbeddingSettings = settings.memoryEmbedding,
                         onUpdateAssistant = { vm.update(it) },
                         onUpdateMemoryRetrievalTopK = vm::updateMemoryRetrievalTopK,
+                        onSaveMemoryEmbeddingSettings = vm::updateMemoryEmbedding,
                     )
                 }
             }
@@ -196,8 +200,10 @@ fun AssistantMemoryPage(id: String) {
 @Composable
 private fun MemorySettingsTab(
     assistant: Assistant,
+    memoryEmbeddingSettings: MemoryEmbeddingSettings,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateMemoryRetrievalTopK: (Int) -> Unit,
+    onSaveMemoryEmbeddingSettings: (MemoryEmbeddingSettings) -> Unit,
 ) {
     val currentAssistant by rememberUpdatedState(assistant)
     val currentOnUpdateTopK by rememberUpdatedState(onUpdateMemoryRetrievalTopK)
@@ -287,6 +293,11 @@ private fun MemorySettingsTab(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        MemoryEmbeddingSettingsCard(
+            settings = memoryEmbeddingSettings,
+            onSave = onSaveMemoryEmbeddingSettings,
+        )
+
         CardGroup {
             switchItem(
                 checked = assistant.enableMemory,

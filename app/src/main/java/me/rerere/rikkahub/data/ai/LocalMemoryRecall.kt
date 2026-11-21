@@ -25,12 +25,18 @@ internal fun recallLocalMemories(
     activeFiles: List<MemoryFile>,
     topK: Int,
     nowMillis: Long,
+): List<MemoryRecallHit> = selectMemoryRecallHits(localMemoryRecallCandidates(query, activeFiles, nowMillis), topK)
+
+internal fun localMemoryRecallCandidates(
+    query: String,
+    activeFiles: List<MemoryFile>,
+    nowMillis: Long,
 ): List<MemoryRecallHit> {
     val queryEnd = query.offsetByCodePoints(0, query.codePointCount(0, query.length).coerceAtMost(MAX_RECALL_QUERY_CODE_POINTS))
     val terms = memoryRecallTerms(query, MAX_RECALL_QUERY_TERMS, queryEnd)
     if (terms.isEmpty()) return emptyList()
 
-    val candidates = activeFiles.flatMap { file ->
+    return activeFiles.flatMap { file ->
         val chunks = memoryRecallChunks(file.body)
         if (chunks.isEmpty()) return@flatMap emptyList()
 
@@ -58,7 +64,11 @@ internal fun recallLocalMemories(
                 score = (bodyScore + metadataScore) * decay,
             )
         }
-    }.sortedWith(
+    }
+}
+
+internal fun selectMemoryRecallHits(candidates: List<MemoryRecallHit>, topK: Int): List<MemoryRecallHit> {
+    val sorted = candidates.sortedWith(
         compareByDescending<MemoryRecallHit> { it.score }
             .thenBy { it.path }
             .thenBy { it.chunkIndex }
@@ -70,7 +80,7 @@ internal fun recallLocalMemories(
     val result = mutableListOf<MemoryRecallHit>()
     val seenBodies = mutableSetOf<String>()
     var remainingCodePoints = MAX_RECALL_RESULT_CODE_POINTS
-    for (hit in candidates) {
+    for (hit in sorted) {
         val codePoints = hit.content.codePointCount(0, hit.content.length)
         if (codePoints > remainingCodePoints || !seenBodies.add(hit.content)) continue
         // 预算按 Unicode code point 计量，始终保留完整原文片段。
@@ -201,9 +211,9 @@ private fun memoryRecallTokens(text: String): List<RecallTerm> {
     return terms
 }
 
-private data class MemoryRecallChunk(val content: String, val terms: Set<String>)
+internal data class MemoryRecallChunk(val content: String, val terms: Set<String>)
 
-private fun memoryRecallChunks(body: String): List<MemoryRecallChunk> {
+internal fun memoryRecallChunks(body: String): List<MemoryRecallChunk> {
     val chunks = mutableListOf<MemoryRecallChunk>()
     var currentStart = 0
     var currentEnd = 0

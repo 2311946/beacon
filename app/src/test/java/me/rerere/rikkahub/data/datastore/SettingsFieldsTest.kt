@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.model.AssistantStatus
 import me.rerere.rikkahub.data.model.GroupChat
 import me.rerere.rikkahub.data.model.GroupChatDefaults
 import me.rerere.rikkahub.data.model.AutonomousWakeupSettings
+import me.rerere.rikkahub.data.model.MemoryEmbeddingSettings
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
@@ -122,6 +123,38 @@ class SettingsFieldsTest {
         preferences.putSettings(updated, persisted = switched)
         assertEquals(updated.assistants, preferences.toSettings().assistants)
         assertEquals(global.copy(useGlobalMemory = false), preferences.toSettings().assistants.last())
+    }
+
+    @Test
+    fun `memory embedding defaults are opt in for legacy and new settings`() {
+        val defaults = MemoryEmbeddingSettings()
+        assertFalse(defaults.enabled)
+        assertEquals("https://api.openai.com/v1/embeddings", defaults.endpoint)
+        assertEquals("", defaults.apiKey)
+        assertEquals("text-embedding-3-small", defaults.model)
+        assertEquals(0.6, defaults.semanticWeight, 0.0)
+        assertEquals(defaults, Settings().memoryEmbedding)
+        assertEquals(defaults, JsonInstant.decodeFromString<Settings>("{}").memoryEmbedding)
+        assertEquals(defaults, JsonInstant.decodeFromString<MemoryEmbeddingSettings>("{}"))
+        assertFalse(emptyPreferences().toSettings().memoryEmbedding.enabled)
+    }
+
+    @Test
+    fun `memory embedding settings persist and hide the api key in toString`() {
+        val settings = SAMPLE.copy(
+            memoryEmbedding = MemoryEmbeddingSettings(
+                enabled = true,
+                endpoint = "https://example.com/v1/embeddings",
+                apiKey = "secret-key",
+                model = "custom-model",
+                semanticWeight = 0.75,
+            )
+        )
+        val preferences = mutablePreferencesOf().apply { putSettings(settings) }
+
+        assertEquals(settings, preferences.toSettings())
+        assertFalse(settings.memoryEmbedding.toString().contains("secret-key"))
+        assertFalse(preferences.toSettings().toString().contains("secret-key"))
     }
 
     @Test
@@ -300,6 +333,7 @@ class SettingsFieldsTest {
         assertEquals(DEFAULT_SYSTEM_TTS_ID, settings.selectedTTSProviderId)
         assertEquals(null, settings.selectedASRProviderId)
         assertEquals(null, settings.memoryModelId)
+        assertEquals(MemoryEmbeddingSettings(), settings.memoryEmbedding)
         assertEquals(true, settings.dynamicColor)
         assertEquals(8080, settings.webServerPort)
     }
@@ -391,6 +425,7 @@ private val SAMPLE = Settings(
     groupChats = listOf(GroupChat(id = id(40), name = "Group", memberIds = listOf(id(20)))),
     groupChatDefaults = GroupChatDefaults(autoChatRounds = 4),
     autonomousWakeup = AutonomousWakeupSettings(enabled = true, assistantIds = setOf(id(20))),
+    memoryEmbedding = MemoryEmbeddingSettings(enabled = true, semanticWeight = 0.75),
     assistantTags = listOf(Tag(id = id(7), name = "tag")),
     searchServices = listOf(
         SearchServiceOptions.BingLocalOptions(id = id(21)),
@@ -453,6 +488,7 @@ private val STORED_KEYS = setOf(
     "group_chats",
     "group_chat_defaults",
     "autonomous_wakeup",
+    "memory_embedding",
     "search_services",
     "search_common",
     "search_selected",

@@ -128,6 +128,14 @@ val appModule = module {
         )
     }
 
+    single<me.rerere.rikkahub.data.ai.MemoryEmbedder> {
+        me.rerere.rikkahub.data.ai.MemoryEmbeddingClient(get())
+    }
+
+    single {
+        me.rerere.rikkahub.data.ai.HybridMemoryRecall(get(), get<me.rerere.rikkahub.data.ai.MemoryEmbedder>(), get<me.rerere.rikkahub.data.datastore.SettingsStore>())
+    }
+
     single {
         ChatRequestFactory(
             context = get(),
@@ -135,6 +143,7 @@ val appModule = module {
             usageRecorder = get(),
             chatToolFactory = get(),
             memoryRepository = get(),
+            hybridMemoryRecall = get(),
             templateTransformer = get(),
             workspaceRepository = get(),
         )

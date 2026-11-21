@@ -92,6 +92,7 @@ class ChatRequestFactory(
     private val memoryRepository: MemoryRepository,
     templateTransformer: TemplateTransformer,
     workspaceRepository: WorkspaceRepository,
+    private val hybridMemoryRecall: HybridMemoryRecall? = null,
 ) {
     private val renderedPrefixes = me.rerere.rikkahub.data.ai.transformers.RenderedPrefixStore()
 
@@ -297,7 +298,10 @@ class ChatRequestFactory(
         val assistant = turn.assistant
         // 每个新工具步骤重查 ACTIVE；同一步网络/空回复重试仍复用已构建的请求。
         val memoryHits = if (assistant.enableMemory && includeMemoryRecall) {
-            memoryRepository.recallForChat(
+            hybridMemoryRecall?.recall(
+                turn.memoryNamespace, turn.memoryRecallQuery,
+                assistant.memoryRetrievalTopK, turn.memoryRecallNowMillis,
+            ) ?: memoryRepository.recallForChat(
                 turn.memoryNamespace, turn.memoryRecallQuery,
                 assistant.memoryRetrievalTopK, turn.memoryRecallNowMillis,
             )

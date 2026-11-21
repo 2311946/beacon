@@ -69,6 +69,9 @@ data class MemoryChunkEntity(
     @ColumnInfo("content_hash") val contentHash: String,
     @ColumnInfo("chunker_version") val chunkerVersion: Int,
     val content: String,
+    @ColumnInfo(name = "embedding", typeAffinity = ColumnInfo.BLOB) val embedding: ByteArray? = null,
+    @ColumnInfo(name = "embedding_profile", defaultValue = "''") val embeddingProfile: String = "",
+    @ColumnInfo(name = "embedding_dimensions", defaultValue = "0") val embeddingDimensions: Int = 0,
 )
 
 /** 持久化待索引意图，一文件一个任务；这不是已启动的后台worker或已就绪索引。 */

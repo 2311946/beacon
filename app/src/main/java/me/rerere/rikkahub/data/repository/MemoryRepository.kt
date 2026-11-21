@@ -73,6 +73,31 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
     suspend fun getSources(assistantId: String, path: String): List<MemorySourceEntity> =
         MemoryFile.normalizePath(path)?.let { memoryDAO.getSources(assistantId, it) }.orEmpty()
 
+    /** 索引使用当前事务校验过的旁表，不能凭旧正文快照注入。 */
+    internal suspend fun indexedChunks(namespace: String, path: String) =
+        memoryDAO.readIndexedChunks(namespace, path)
+
+    /** 启用/更换模型或从备份恢复后补队列；不修改正文和来源。 */
+    internal suspend fun prepareEmbeddingJobs(profile: String) {
+        for (snapshot in memoryDAO.getAllActiveFiles()) {
+            // 仅 legacy 元数据回填持写锁；扫描/就绪检查不阻塞正常记忆写入。
+            if (memoryDAO.getMetadata(snapshot.assistantId, snapshot.path) == null) {
+                writeLock.withLock {
+                    val file = memoryDAO.getActiveFile(snapshot.assistantId, snapshot.path)
+                    if (file != null && memoryDAO.getMetadata(file.assistantId, file.path) == null) {
+                        val metadata = newMetadata(file)
+                        memoryDAO.saveState(file, metadata, listOf(sourceEntity(metadata, MemorySource(MemorySourceKind.UNKNOWN))))
+                    }
+                }
+            }
+            // 空正文没有可索引片段；原写入任务仍由索引器消费，不重复补建空结果。
+            if (snapshot.toMemoryFile().body.isBlank()) continue
+            if (!memoryDAO.isEmbeddingReady(snapshot.assistantId, snapshot.path, profile)) {
+                memoryDAO.ensureIndexJob(snapshot.assistantId, snapshot.path)
+            }
+        }
+    }
+
     /** 新建或整体覆盖 */
     suspend fun writeFile(
         assistantId: String,

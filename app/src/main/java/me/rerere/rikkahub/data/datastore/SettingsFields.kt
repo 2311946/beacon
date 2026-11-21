@@ -129,6 +129,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         // 自主唤醒
         json(AUTONOMOUS_WAKEUP, Settings::autonomousWakeup) { copy(autonomousWakeup = it) },
 
+        // 记忆嵌入
+        json(MEMORY_EMBEDDING, Settings::memoryEmbedding) { copy(memoryEmbedding = it) },
+
         // 搜索
         json(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
         json(SEARCH_COMMON, Settings::searchCommonOptions) { copy(searchCommonOptions = it) },

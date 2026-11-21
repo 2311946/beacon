@@ -143,6 +143,9 @@ class SettingsStore internal constructor(
         // 自主唤醒：保留旧 key 对旧备份兼容，新配置独立存储
         val AUTONOMOUS_WAKEUP = stringPreferencesKey("autonomous_wakeup")
 
+        // 记忆嵌入
+        val MEMORY_EMBEDDING = stringPreferencesKey("memory_embedding")
+
         // 搜索
         val SEARCH_SERVICES = stringPreferencesKey("search_services")
         val SEARCH_COMMON = stringPreferencesKey("search_common")

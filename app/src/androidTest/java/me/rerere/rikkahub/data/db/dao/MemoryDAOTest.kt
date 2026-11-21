@@ -4,7 +4,9 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.entity.MemoryChunkEntity
@@ -18,6 +20,7 @@ import me.rerere.rikkahub.data.model.MemorySourceKind
 import me.rerere.rikkahub.data.model.memoryContentHash
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -283,6 +286,253 @@ class MemoryDAOTest {
         assertTrue(dao.publishChunks(recreatedJob, recreatedChunks))
         assertEquals(recreatedChunks, dao.getChunks(file.assistantId, file.path))
         assertTrue(dao.getIndexJobs(file.assistantId).isEmpty())
+    }
+
+    @Test
+    fun allActiveFilesIncludeLegacyAndAllNamespacesButExcludeInactiveMetadata() = runBlocking {
+        val first = MemoryFileEntity("assistant-b", "notes/shared.md", "乙", 10L)
+        val second = first.copy(assistantId = "assistant-a", content = "甲")
+        val global = first.copy(assistantId = MemoryScope.GLOBAL_NAMESPACE, path = "notes/global.md")
+        val legacy = first.copy(path = "notes/legacy.md")
+        listOf(first, second, global).forEach { save(it, "revision-${it.assistantId}") }
+        dao.upsertFile(legacy)
+        listOf("ARCHIVED", "QUARANTINED", "SUPERSEDED").forEach { lifecycle ->
+            val inactive = first.copy(path = "notes/$lifecycle.md")
+            val metadata = save(inactive, "revision-$lifecycle")
+            dao.upsertMetadata(metadata.copy(lifecycle = lifecycle))
+        }
+
+        assertEquals(listOf(global, legacy, second, first), dao.getAllActiveFiles())
+    }
+
+    @Test
+    fun observeIndexJobsIncludesAllNamespacesWithStableQueuePathAndAssistantOrder() = runBlocking {
+        val files = listOf(
+            MemoryFileEntity("assistant-b", "notes/shared.md", "乙", 20L),
+            MemoryFileEntity("assistant-a", "notes/shared.md", "甲", 20L),
+            MemoryFileEntity(MemoryScope.GLOBAL_NAMESPACE, "notes/a.md", "共享", 20L),
+            MemoryFileEntity("assistant-a", "notes/z.md", "最早", 10L),
+        )
+        files.forEachIndexed { index, file -> save(file, "revision-$index") }
+        val expected = files.sortedWith(compareBy({ it.updatedAt }, { it.path }, { it.assistantId }))
+        val observed = withTimeout(5_000) { dao.observeIndexJobs().first() }
+        assertEquals(expected.map { it.assistantId to it.path }, observed.map { it.assistantId to it.path })
+
+        dao.deleteFile(files.first().assistantId, files.first().path)
+        assertEquals(observed.dropLast(1), withTimeout(5_000) { dao.observeIndexJobs().first() })
+    }
+
+    @Test
+    fun ensureIndexJobQueuesCurrentMetadataOnlyOnceAndNeverOverwritesExistingJob() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/shared.md", "完整正文", 10L)
+        val metadata = save(file, "revision-current").copy(updatedAt = 42L)
+        dao.upsertMetadata(metadata)
+        dao.deleteIndexJob(file.assistantId, file.path)
+
+        assertTrue(dao.ensureIndexJob(file.assistantId, file.path))
+        val expected = MemoryIndexJobEntity(file.assistantId, file.path, metadata.revision, metadata.contentHash, 42L)
+        assertEquals(listOf(expected), dao.getIndexJobs(file.assistantId))
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        val existing = expected.copy(memoryRevision = "revision-existing", contentHash = "旧任务hash", queuedAt = 1L)
+        dao.upsertIndexJob(existing)
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        assertEquals(listOf(existing), dao.getIndexJobs(file.assistantId))
+    }
+
+    @Test
+    fun ensureIndexJobRejectsMissingLegacyInactiveAndMismatchedBodyWithoutWriting() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/shared.md", "原文", 10L)
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        dao.upsertFile(file)
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        val metadata = save(file, "revision-current")
+        dao.deleteIndexJob(file.assistantId, file.path)
+        listOf("ARCHIVED", "QUARANTINED", "SUPERSEDED").forEach { lifecycle ->
+            dao.upsertMetadata(metadata.copy(lifecycle = lifecycle))
+            assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        }
+        dao.upsertMetadata(metadata.copy(contentHash = metadata.contentHash.take(12)))
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        dao.upsertMetadata(metadata)
+        dao.upsertFile(file.copy(content = "绕过元数据修改正文"))
+        assertFalse(dao.ensureIndexJob(file.assistantId, file.path))
+        assertTrue(dao.getIndexJobs(file.assistantId).isEmpty())
+        assertFalse(dao.ensureIndexJob("assistant-b", file.path))
+    }
+
+    @Test
+    fun readIndexedChunksReturnsOnlyWholeCurrentRevisionAndFullBodyHash() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/shared.md", "完整正文", 10L)
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        dao.upsertFile(file)
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        val metadata = save(file, "revision-current")
+        val first = chunk(metadata, "第一块")
+        val second = first.copy(chunkIndex = 1, content = "第二块")
+        dao.upsertChunks(listOf(first, second))
+        assertEquals(listOf(first, second), dao.readIndexedChunks(file.assistantId, file.path))
+        assertTrue(dao.readIndexedChunks("assistant-b", file.path).isEmpty())
+
+        listOf(
+            second.copy(memoryRevision = "revision-stale"),
+            second.copy(contentHash = metadata.contentHash.take(12)),
+            second.copy(contentHash = memoryContentHash("其他正文")),
+        ).forEach { stale ->
+            dao.upsertChunks(listOf(stale))
+            assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        }
+        dao.upsertChunks(listOf(second))
+        listOf("ARCHIVED", "QUARANTINED", "SUPERSEDED").forEach { lifecycle ->
+            dao.upsertMetadata(metadata.copy(lifecycle = lifecycle))
+            assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        }
+        dao.upsertMetadata(metadata.copy(contentHash = metadata.contentHash.take(12)))
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        dao.upsertMetadata(metadata)
+        dao.upsertFile(file.copy(content = "绕过元数据修改正文"))
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        dao.upsertFile(file)
+        assertEquals(listOf(first, second), dao.readIndexedChunks(file.assistantId, file.path))
+        dao.deleteFile(file.assistantId, file.path)
+        val recreated = save(file, "revision-recreated")
+        dao.upsertChunks(listOf(first, second))
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        dao.upsertChunks(listOf(first.copy(memoryRevision = recreated.revision), second.copy(memoryRevision = recreated.revision)))
+        assertEquals(2, dao.readIndexedChunks(file.assistantId, file.path).size)
+    }
+
+    @Test
+    fun getIndexJobUsesBothNamespaceAndPathAndPreservesExactJobIdentity() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/shared.md", "正文", 10L)
+        val metadata = save(file, "revision-current")
+        val otherNamespace = file.copy(assistantId = "assistant-b")
+        val otherPath = file.copy(path = "notes/other.md")
+        save(otherNamespace, "revision-other-namespace")
+        save(otherPath, "revision-other-path")
+        val expected = MemoryIndexJobEntity(file.assistantId, file.path, metadata.revision, metadata.contentHash, 10L)
+        assertEquals(expected, dao.getIndexJob(file.assistantId, file.path))
+        assertNull(dao.getIndexJob("missing", file.path))
+        assertNull(dao.getIndexJob(file.assistantId, "notes/missing.md"))
+        assertFalse(dao.publishChunks(expected.copy(queuedAt = 11L), listOf(chunk(metadata, file.content))))
+        assertEquals(expected, dao.getIndexJob(file.assistantId, file.path))
+        dao.deleteIndexJob(file.assistantId, file.path)
+        assertNull(dao.getIndexJob(file.assistantId, file.path))
+        assertTrue(dao.ensureIndexJob(file.assistantId, file.path))
+        assertEquals(expected, dao.getIndexJob(file.assistantId, file.path))
+        assertTrue(dao.publishChunks(expected, listOf(chunk(metadata, file.content))))
+        assertNull(dao.getIndexJob(file.assistantId, file.path))
+        assertEquals("revision-other-namespace", dao.getIndexJob(otherNamespace.assistantId, otherNamespace.path)?.memoryRevision)
+        assertEquals("revision-other-path", dao.getIndexJob(otherPath.assistantId, otherPath.path)?.memoryRevision)
+    }
+
+    @Test
+    fun isEmbeddingReadyRequiresEveryChunkToMatchCurrentMetadataAndVectorLayout() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/vector.md", "向量正文", 10L)
+        val profile = "provider:model"
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        dao.upsertFile(file)
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        val metadata = save(file, "revision-current")
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        val first = chunk(metadata, "第一块").copy(
+            embedding = ByteArray(8), embeddingProfile = profile, embeddingDimensions = 2,
+        )
+        val second = first.copy(chunkIndex = 1, content = "第二块")
+        dao.upsertChunks(listOf(first, second))
+        assertTrue(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        assertFalse(dao.isEmbeddingReady("assistant-b", file.path, profile))
+        assertFalse(dao.isEmbeddingReady(file.assistantId, "notes/other.md", profile))
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, "other:model"))
+        listOf(
+            second.copy(memoryRevision = "revision-stale"),
+            second.copy(contentHash = metadata.contentHash.take(12)),
+            second.copy(contentHash = memoryContentHash("其他正文")),
+            second.copy(embedding = null),
+            second.copy(embeddingProfile = "other:model"),
+            second.copy(embeddingProfile = ""),
+            second.copy(chunkerVersion = 0),
+            second.copy(chunkerVersion = 2),
+            second.copy(embeddingDimensions = 0),
+            second.copy(embeddingDimensions = -1),
+            second.copy(embeddingDimensions = Int.MAX_VALUE),
+            second.copy(embedding = ByteArray(7)),
+            second.copy(embedding = ByteArray(12)),
+            second.copy(embedding = ByteArray(0)),
+        ).forEach { invalid ->
+            dao.upsertChunks(listOf(invalid))
+            assertFalse("非法分块不能被就绪查询忽略：$invalid", dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        }
+        dao.upsertChunks(listOf(second))
+        listOf("ARCHIVED", "QUARANTINED", "SUPERSEDED").forEach { lifecycle ->
+            dao.upsertMetadata(metadata.copy(lifecycle = lifecycle))
+            assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        }
+        dao.upsertMetadata(metadata.copy(revision = "revision-new"))
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        dao.upsertMetadata(metadata.copy(contentHash = memoryContentHash("新正文")))
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        dao.upsertMetadata(metadata)
+        assertTrue(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        dao.upsertFile(file.copy(content = "绕过元数据修改正文"))
+        // 轻量查询不读取正文；实际读取仍须验证完整正文哈希。
+        assertTrue(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        assertTrue(dao.readIndexedChunks(file.assistantId, file.path).isEmpty())
+        dao.deleteChunks(file.assistantId, file.path)
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+        dao.deleteFile(file.assistantId, file.path)
+        assertFalse(dao.isEmbeddingReady(file.assistantId, file.path, profile))
+    }
+
+    @Test
+    fun publishVectorChunksRoundTripsBlobProfileAndDimensions() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/vector.md", "向量正文", 10L)
+        val metadata = save(file, "revision-vector")
+        val vector = chunk(metadata, file.content).copy(
+            embedding = byteArrayOf(0, 0, -128, 63, 0, 0, 0, -64),
+            embeddingProfile = "provider:model",
+            embeddingDimensions = 2,
+        )
+        val job = dao.getIndexJobs(file.assistantId).single()
+
+        assertTrue(dao.publishChunks(job, listOf(vector)))
+        val stored = dao.readIndexedChunks(file.assistantId, file.path).single()
+        assertArrayEquals(vector.embedding, stored.embedding)
+        assertEquals(vector.embeddingProfile, stored.embeddingProfile)
+        assertEquals(vector.embeddingDimensions, stored.embeddingDimensions)
+        assertTrue(dao.getIndexJobs(file.assistantId).isEmpty())
+    }
+
+    @Test
+    fun invalidVectorBatchesAreRejectedBeforeReplacingChunksOrConsumingJob() = runBlocking {
+        val file = MemoryFileEntity("assistant-a", "notes/vector.md", "向量正文", 10L)
+        val metadata = save(file, "revision-vector")
+        val legacy = chunk(metadata, "保留旧的无向量分块")
+        dao.upsertChunks(listOf(legacy))
+        val job = dao.getIndexJobs(file.assistantId).single()
+        val vector = legacy.copy(embedding = ByteArray(8), embeddingProfile = "provider:model", embeddingDimensions = 2)
+        val invalid = listOf(
+            listOf(vector.copy(embeddingProfile = "")),
+            listOf(vector.copy(embeddingProfile = " ")),
+            listOf(vector.copy(embeddingDimensions = 0)),
+            listOf(vector.copy(embeddingDimensions = -1)),
+            listOf(vector.copy(embeddingDimensions = Int.MAX_VALUE)),
+            listOf(vector.copy(embedding = ByteArray(7))),
+            listOf(vector.copy(embedding = ByteArray(0))),
+            listOf(vector, legacy.copy(chunkIndex = 1)),
+            listOf(vector, vector.copy(chunkIndex = 1, embeddingProfile = "other:model")),
+            listOf(vector, vector.copy(chunkIndex = 1, embedding = ByteArray(12), embeddingDimensions = 3)),
+        )
+        invalid.forEach { batch ->
+            val failure = runCatching { dao.publishChunks(job, batch) }.exceptionOrNull()
+            assertTrue("非法向量批次必须拒绝，实际异常：$failure", failure is IllegalArgumentException)
+            assertEquals(listOf(legacy), dao.getChunks(file.assistantId, file.path))
+            assertEquals(listOf(job), dao.getIndexJobs(file.assistantId))
+        }
+        assertTrue(dao.publishChunks(job, listOf(legacy)))
+        val stored = dao.readIndexedChunks(file.assistantId, file.path).single()
+        assertNull(stored.embedding)
+        assertEquals("", stored.embeddingProfile)
+        assertEquals(0, stored.embeddingDimensions)
     }
 
     private suspend fun save(file: MemoryFileEntity, revision: String): MemoryMetadataEntity {

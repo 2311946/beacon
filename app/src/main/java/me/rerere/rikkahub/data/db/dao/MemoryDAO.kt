@@ -25,6 +25,9 @@ abstract class MemoryDAO {
     @Query("SELECT f.* FROM memory_file f LEFT JOIN memory_metadata m ON f.assistant_id = m.assistant_id AND f.path = m.path WHERE f.assistant_id = :assistantId AND (m.lifecycle IS NULL OR m.lifecycle = 'ACTIVE') ORDER BY f.path")
     abstract suspend fun getActiveFiles(assistantId: String): List<MemoryFileEntity>
 
+    @Query("SELECT f.* FROM memory_file f LEFT JOIN memory_metadata m ON f.assistant_id = m.assistant_id AND f.path = m.path WHERE m.lifecycle IS NULL OR m.lifecycle = 'ACTIVE' ORDER BY f.path, f.assistant_id")
+    abstract suspend fun getAllActiveFiles(): List<MemoryFileEntity>
+
     @Query("SELECT f.* FROM memory_file f LEFT JOIN memory_metadata m ON f.assistant_id = m.assistant_id AND f.path = m.path WHERE f.assistant_id = :assistantId AND f.path = :path AND (m.lifecycle IS NULL OR m.lifecycle = 'ACTIVE')")
     abstract suspend fun getActiveFile(assistantId: String, path: String): MemoryFileEntity?
 
@@ -49,8 +52,61 @@ abstract class MemoryDAO {
     @Query("SELECT * FROM memory_chunk WHERE assistant_id = :assistantId AND path = :path ORDER BY chunk_index")
     abstract suspend fun getChunks(assistantId: String, path: String): List<MemoryChunkEntity>
 
+    // 仅检查索引元数据；正文完整哈希仍由 readIndexedChunks 校验。
+    @Query("""
+        SELECT EXISTS (
+            SELECT 1 FROM memory_metadata m
+            JOIN memory_file f ON f.assistant_id = m.assistant_id AND f.path = m.path
+            WHERE m.assistant_id = :assistantId AND m.path = :path AND m.lifecycle = 'ACTIVE'
+                AND EXISTS (
+                    SELECT 1 FROM memory_chunk c
+                    WHERE c.assistant_id = m.assistant_id AND c.path = m.path
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM memory_chunk c
+                    WHERE c.assistant_id = m.assistant_id AND c.path = m.path
+                        AND (c.memory_revision != m.revision OR c.content_hash != m.content_hash
+                            OR c.embedding IS NULL OR c.embedding_profile != :profile
+                            OR c.chunker_version != 1 OR c.embedding_dimensions <= 0
+                            OR length(c.embedding) != c.embedding_dimensions * 4)
+                )
+        )
+    """)
+    abstract suspend fun isEmbeddingReady(assistantId: String, path: String, profile: String): Boolean
+
+    @Query("SELECT * FROM memory_index_job WHERE assistant_id = :assistantId AND path = :path")
+    abstract suspend fun getIndexJob(assistantId: String, path: String): MemoryIndexJobEntity?
+
     @Query("SELECT * FROM memory_index_job WHERE assistant_id = :assistantId ORDER BY queued_at, path")
     abstract suspend fun getIndexJobs(assistantId: String): List<MemoryIndexJobEntity>
+
+    @Query("SELECT * FROM memory_index_job ORDER BY queued_at, path, assistant_id")
+    abstract fun observeIndexJobs(): Flow<List<MemoryIndexJobEntity>>
+
+    @Transaction
+    open suspend fun ensureIndexJob(assistantId: String, path: String): Boolean {
+        val file = getFile(assistantId, path) ?: return false
+        val metadata = getMetadata(assistantId, path) ?: return false
+        if (metadata.lifecycle != "ACTIVE" ||
+            me.rerere.rikkahub.data.model.memoryContentHash(file.content) != metadata.contentHash ||
+            getIndexJob(assistantId, path) != null
+        ) return false
+        upsertIndexJob(MemoryIndexJobEntity(assistantId, path, metadata.revision, metadata.contentHash, metadata.updatedAt))
+        return true
+    }
+
+    @Transaction
+    open suspend fun readIndexedChunks(assistantId: String, path: String): List<MemoryChunkEntity> {
+        val file = getFile(assistantId, path) ?: return emptyList()
+        val metadata = getMetadata(assistantId, path) ?: return emptyList()
+        if (metadata.lifecycle != "ACTIVE" ||
+            me.rerere.rikkahub.data.model.memoryContentHash(file.content) != metadata.contentHash
+        ) return emptyList()
+        val chunks = getChunks(assistantId, path)
+        return chunks.takeIf { current ->
+            current.all { it.memoryRevision == metadata.revision && it.contentHash == metadata.contentHash }
+        } ?: emptyList()
+    }
 
     @Upsert
     abstract suspend fun upsertMetadata(metadata: MemoryMetadataEntity)
@@ -111,7 +167,7 @@ abstract class MemoryDAO {
         if (metadata.lifecycle != "ACTIVE" || metadata.revision != job.memoryRevision ||
             metadata.contentHash != job.contentHash ||
             me.rerere.rikkahub.data.model.memoryContentHash(file.content) != job.contentHash ||
-            getIndexJobs(job.assistantId).none { it == job }
+            getIndexJob(job.assistantId, job.path) != job
         ) return false
         require(chunks.map { it.chunkIndex } == chunks.indices.toList())
         require(chunks.all {
@@ -119,6 +175,14 @@ abstract class MemoryDAO {
                 it.memoryRevision == job.memoryRevision && it.contentHash == job.contentHash && it.chunkerVersion > 0
         })
         require(chunks.map { it.chunkerVersion }.distinct().size <= 1)
+        if (chunks.any { it.embedding != null }) {
+            require(chunks.all {
+                it.embeddingProfile.isNotBlank() && it.embeddingDimensions > 0 &&
+                    it.embedding?.size?.toLong() == it.embeddingDimensions.toLong() * 4
+            })
+            require(chunks.map { it.embeddingProfile }.distinct().size == 1)
+            require(chunks.map { it.embeddingDimensions }.distinct().size == 1)
+        }
         deleteChunks(job.assistantId, job.path)
         upsertChunks(chunks)
         deleteIndexJob(job.assistantId, job.path)

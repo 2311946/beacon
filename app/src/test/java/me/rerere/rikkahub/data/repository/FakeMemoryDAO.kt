@@ -10,20 +10,35 @@ import me.rerere.rikkahub.data.db.entity.MemorySourceEntity
 import me.rerere.rikkahub.data.db.entity.MemoryChunkEntity
 import me.rerere.rikkahub.data.db.entity.MemoryIndexJobEntity
 
-internal class FakeMemoryDAO : MemoryDAO() {
+internal open class FakeMemoryDAO : MemoryDAO() {
     private val files = MutableStateFlow<List<MemoryFileEntity>>(emptyList())
     private val metadata = mutableMapOf<Pair<String, String>, MemoryMetadataEntity>()
     private val sources = mutableListOf<MemorySourceEntity>()
     private val chunks = mutableListOf<MemoryChunkEntity>()
-    private val jobs = mutableMapOf<Pair<String, String>, MemoryIndexJobEntity>()
+    private val jobs = MutableStateFlow<Map<Pair<String, String>, MemoryIndexJobEntity>>(emptyMap())
 
     override suspend fun getMetadata(assistantId: String, path: String) = metadata[assistantId to path]
     override suspend fun getSources(assistantId: String, path: String) =
         sources.filter { it.assistantId == assistantId && it.path == path }.sortedBy { it.sourceId }
     override suspend fun getChunks(assistantId: String, path: String) =
         chunks.filter { it.assistantId == assistantId && it.path == path }.sortedBy { it.chunkIndex }
-    override suspend fun getIndexJobs(assistantId: String) = jobs.values.filter { it.assistantId == assistantId }
+    override suspend fun isEmbeddingReady(assistantId: String, path: String, profile: String): Boolean {
+        if (files.value.none { it.assistantId == assistantId && it.path == path }) return false
+        val current = metadata[assistantId to path] ?: return false
+        if (current.lifecycle != "ACTIVE") return false
+        val currentChunks = chunks.filter { it.assistantId == assistantId && it.path == path }
+        return currentChunks.isNotEmpty() && currentChunks.all {
+            it.memoryRevision == current.revision && it.contentHash == current.contentHash &&
+                it.embedding != null && it.embeddingProfile == profile && it.chunkerVersion == 1 &&
+                it.embeddingDimensions > 0 && it.embedding.size.toLong() == it.embeddingDimensions.toLong() * 4
+        }
+    }
+    override suspend fun getIndexJob(assistantId: String, path: String) = jobs.value[assistantId to path]
+    override suspend fun getIndexJobs(assistantId: String) = jobs.value.values.filter { it.assistantId == assistantId }
         .sortedWith(compareBy({ it.queuedAt }, { it.path }))
+    override fun observeIndexJobs(): Flow<List<MemoryIndexJobEntity>> = jobs.map { all ->
+        all.values.sortedWith(compareBy({ it.queuedAt }, { it.path }, { it.assistantId }))
+    }
     override suspend fun upsertMetadata(metadata: MemoryMetadataEntity) {
         this.metadata[metadata.assistantId to metadata.path] = metadata
     }
@@ -39,14 +54,18 @@ internal class FakeMemoryDAO : MemoryDAO() {
             this.chunks += chunk
         }
     }
-    override suspend fun upsertIndexJob(job: MemoryIndexJobEntity) { jobs[job.assistantId to job.path] = job }
+    override suspend fun upsertIndexJob(job: MemoryIndexJobEntity) {
+        jobs.value = jobs.value + ((job.assistantId to job.path) to job)
+    }
     override suspend fun deleteSources(assistantId: String, path: String) {
         sources.removeAll { it.assistantId == assistantId && it.path == path }
     }
     override suspend fun deleteChunks(assistantId: String, path: String) {
         chunks.removeAll { it.assistantId == assistantId && it.path == path }
     }
-    override suspend fun deleteIndexJob(assistantId: String, path: String) { jobs.remove(assistantId to path) }
+    override suspend fun deleteIndexJob(assistantId: String, path: String) {
+        jobs.value = jobs.value - (assistantId to path)
+    }
 
     override fun getFilesOfAssistantFlow(assistantId: String): Flow<List<MemoryFileEntity>> =
         files.map { all -> all.filter { it.assistantId == assistantId }.sortedBy { it.path } }
@@ -59,6 +78,10 @@ internal class FakeMemoryDAO : MemoryDAO() {
 
     override suspend fun getActiveFiles(assistantId: String): List<MemoryFileEntity> =
         getFilesOfAssistant(assistantId).filter { getMetadata(assistantId, it.path)?.lifecycle?.let { state -> state == "ACTIVE" } ?: true }
+
+    override suspend fun getAllActiveFiles(): List<MemoryFileEntity> =
+        files.value.filter { metadata[it.assistantId to it.path]?.lifecycle?.let { state -> state == "ACTIVE" } ?: true }
+            .sortedWith(compareBy({ it.path }, { it.assistantId }))
 
     override suspend fun getActiveFile(assistantId: String, path: String): MemoryFileEntity? =
         getFile(assistantId, path)?.takeIf { getMetadata(assistantId, path)?.lifecycle?.let { state -> state == "ACTIVE" } ?: true }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
+import me.rerere.rikkahub.data.ai.validEmbeddingEndpoint
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -26,6 +27,7 @@ import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.data.skills.SkillMetadata
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.MemoryEmbeddingSettings
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -213,6 +215,16 @@ class AssistantDetailVM(
                     ) else latest
                 })
             }
+        }
+    }
+
+    fun updateMemoryEmbedding(settings: MemoryEmbeddingSettings) {
+        if (!validEmbeddingEndpoint(settings.endpoint) || settings.model.isBlank() ||
+            !settings.semanticWeight.isFinite() || settings.semanticWeight !in 0.0..1.0
+        ) return
+        val updated = settings.copy(endpoint = settings.endpoint.trim(), model = settings.model.trim())
+        viewModelScope.launch {
+            settingsStore.update { it.copy(memoryEmbedding = updated) }
         }
     }
 

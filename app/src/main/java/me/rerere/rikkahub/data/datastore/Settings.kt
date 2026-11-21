@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.GroupChat
 import me.rerere.rikkahub.data.model.GroupChatDefaults
 import me.rerere.rikkahub.data.model.AutonomousWakeupSettings
+import me.rerere.rikkahub.data.model.MemoryEmbeddingSettings
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
@@ -67,6 +68,7 @@ data class Settings(
     val groupChatDefaults: GroupChatDefaults = GroupChatDefaults(),
     // 自主唤醒：唤醒仅触发决策，不必发消息
     val autonomousWakeup: AutonomousWakeupSettings = AutonomousWakeupSettings(),
+    val memoryEmbedding: MemoryEmbeddingSettings = MemoryEmbeddingSettings(),
     val assistantTags: List<Tag> = emptyList(),
     val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),
     val searchCommonOptions: SearchCommonOptions = SearchCommonOptions(),

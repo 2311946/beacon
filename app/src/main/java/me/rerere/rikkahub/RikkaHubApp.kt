@@ -156,6 +156,7 @@ class RikkaHubApp : Application(), SingletonImageLoader.Factory {
         // Resume media generations interrupted by the last process death
         resumeMediaCreations()
         resumeMemoryConsolidation()
+        me.rerere.rikkahub.service.observeMemoryEmbedding(this, get<AppScope>(), get(), get(), get())
 
         // Increment launch count
         incrementLaunchCount()

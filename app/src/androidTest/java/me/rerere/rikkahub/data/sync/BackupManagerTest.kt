@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.model.MemorySourceKind
 import me.rerere.rikkahub.data.model.memoryContentHash
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -222,7 +223,20 @@ class BackupManagerTest {
                 contentHash = metadata.contentHash,
                 chunkerVersion = 2,
                 content = content,
+                embedding = ByteBuffer.allocate(2 * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+                    .putFloat(index + 0.25f).putFloat(-index - 0.5f).array(),
+                embeddingProfile = "backup-embedding-profile",
+                embeddingDimensions = 2,
             )
+        }
+        fun assertChunks(actual: List<MemoryChunkEntity>) {
+            // ByteArray 的 data class 相等判断比较引用，BLOB 必须逐字节核对。
+            assertEquals(chunks.map { it.copy(embedding = null) }, actual.map { it.copy(embedding = null) })
+            chunks.zip(actual).forEach { (expected, restoredChunk) ->
+                assertArrayEquals(expected.embedding, restoredChunk.embedding)
+                assertEquals("backup-embedding-profile", restoredChunk.embeddingProfile)
+                assertEquals(2, restoredChunk.embeddingDimensions)
+            }
         }
         val pendingFile = MemoryFileEntity(namespace, "notes/pending.md", "尚待索引的另一份记忆", 202L)
         val pendingMetadata = metadata.copy(
@@ -246,7 +260,7 @@ class BackupManagerTest {
         val indexedJob = dao.getIndexJobs(namespace).single { it.path == file.path }
         assertTrue(dao.publishChunks(indexedJob, chunks))
         assertEquals(listOf(pendingJob), dao.getIndexJobs(namespace))
-        assertEquals(chunks, dao.getChunks(namespace, file.path))
+        assertChunks(dao.getChunks(namespace, file.path))
 
         val archive = manager.createBackup(includeDatabase = true, includeFiles = false)
         ZipFile(archive).use { zip ->
@@ -283,7 +297,7 @@ class BackupManagerTest {
         assertEquals(provenance, JsonInstant.decodeFromString<MemorySource>(
             restored.getSources(namespace, file.path).first().sourceJson,
         ))
-        assertEquals(chunks, restored.getChunks(namespace, file.path))
+        assertChunks(restored.getChunks(namespace, file.path))
         assertEquals(pendingFile, restored.getFile(namespace, pendingFile.path))
         assertEquals(pendingMetadata, restored.getMetadata(namespace, pendingFile.path))
         assertEquals(pendingSources, restored.getSources(namespace, pendingFile.path))
