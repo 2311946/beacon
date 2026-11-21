@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.MemorySource
+import me.rerere.rikkahub.data.model.MemorySourceKind
+import me.rerere.rikkahub.data.model.MemoryWriteContext
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.MemoryWriteResult
 
@@ -46,14 +49,16 @@ class MemoryFileVM(
     /** 新建文件，路径已被占用时返回 [MemoryWriteResult.Conflict] */
     fun create(path: String, content: String, onResult: (MemoryWriteResult) -> Unit) {
         viewModelScope.launch {
-            onResult(memoryRepository.writeFile(memoryId, path, content, MemoryRepository.NEW_FILE_VERSION))
+            onResult(memoryRepository.writeFile(memoryId, path, content, MemoryRepository.NEW_FILE_VERSION,
+                context = MemoryWriteContext(sources = listOf(MemorySource(MemorySourceKind.MANUAL)))))
         }
     }
 
     fun save(content: String, onResult: (MemoryWriteResult) -> Unit) {
         val path = normalizedPath ?: return
         viewModelScope.launch {
-            onResult(memoryRepository.writeFile(memoryId, path, content))
+            onResult(memoryRepository.writeFile(memoryId, path, content,
+                context = MemoryWriteContext(sources = listOf(MemorySource(MemorySourceKind.MANUAL)))))
         }
     }
 

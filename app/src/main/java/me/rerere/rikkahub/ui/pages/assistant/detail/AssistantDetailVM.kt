@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
@@ -30,6 +33,14 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
+
+data class AssistantMemoryState(
+    val namespace: String,
+    val memories: List<MemoryFile> = emptyList(),
+    val consolidation: MemoryConsolidationStatus = MemoryConsolidationStatus(),
+) {
+    val isGlobal: Boolean get() = namespace == MemoryRepository.GLOBAL_MEMORY_ID
+}
 
 class AssistantDetailVM(
     private val id: String,
@@ -69,20 +80,28 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = Assistant()
         )
 
-    val memories = assistant
-        .flatMapLatest { currentAssistant ->
-            memoryRepository.getFilesFlow(memoryIdOf(currentAssistant))
-        }
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
-        )
+    // null 表示尚未手动切换，沿用助手当前的 useGlobalMemory；查看选择不写入设置。
+    private val _selectedGlobalMemory = MutableStateFlow<Boolean?>(null)
+    val selectedGlobalMemory = _selectedGlobalMemory.asStateFlow()
 
-    val memoryConsolidation: StateFlow<MemoryConsolidationStatus> = assistant
-        .flatMapLatest { currentAssistant ->
-            memoryConsolidationScheduler.statusOf(memoryIdOf(currentAssistant))
+    private val memoryNamespace = combine(assistant, selectedGlobalMemory) { currentAssistant, selection ->
+        memoryIdOf(currentAssistant, selection)
+    }.distinctUntilChanged()
+
+    // 文件、整理状态和所属库一起切换，避免旧文件被配上新库的 namespace。
+    val memoryState: StateFlow<AssistantMemoryState> = memoryNamespace
+        .flatMapLatest { namespace ->
+            combine(
+                memoryRepository.getFilesFlow(namespace),
+                memoryConsolidationScheduler.statusOf(namespace),
+            ) { memories, consolidation ->
+                AssistantMemoryState(namespace, memories, consolidation)
+            }.onStart { emit(AssistantMemoryState(namespace)) }
         }
         .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = MemoryConsolidationStatus()
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = AssistantMemoryState(memoryIdOf(assistant.value)),
         )
 
     val providers = settingsStore
@@ -185,23 +204,25 @@ class AssistantDetailVM(
     }
 
     // 助手还没加载出来时 assistant 是个占位对象，记忆库要按页面拿到的 assistantId 来定位
-    private fun memoryIdOf(assistant: Assistant) = if (assistant.useGlobalMemory) {
-        MemoryRepository.GLOBAL_MEMORY_ID
-    } else {
-        assistantId.toString()
+    private fun memoryIdOf(assistant: Assistant, selection: Boolean? = selectedGlobalMemory.value) =
+        if (selection ?: assistant.useGlobalMemory) {
+            MemoryRepository.GLOBAL_MEMORY_ID
+        } else {
+            assistantId.toString()
+        }
+
+    fun selectMemoryLibrary(global: Boolean) {
+        _selectedGlobalMemory.value = global
     }
 
-    /** 当前助手读写的记忆库 */
-    val memoryId: String get() = memoryIdOf(assistant.value)
-
-    /** 整理所有待整理的对话，并把整个记忆库清理一遍 */
-    fun organizeMemory() {
-        memoryConsolidationScheduler.organize(memoryId)
+    /** 整理页面所显示库的所有待整理对话，并清理整个库。 */
+    fun organizeMemory(namespace: String) {
+        memoryConsolidationScheduler.organize(namespace)
     }
 
-    fun deleteMemory(memory: MemoryFile) {
+    fun deleteMemory(memory: MemoryFile, namespace: String) {
         viewModelScope.launch {
-            memoryRepository.deleteFile(memoryIdOf(assistant.value), memory.path)
+            memoryRepository.deleteFile(namespace, memory.path)
         }
     }
 

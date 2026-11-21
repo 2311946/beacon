@@ -54,7 +54,10 @@ class S3Sync(
         ).getOrThrow()
 
         result.objects
-            .filter { it.key.startsWith("rikkahub_backups/backup_") && it.key.endsWith(".zip") }
+            .filter {
+                it.key.startsWith("rikkahub_backups/") &&
+                    BackupManager.isBackupFileName(it.key.removePrefix("rikkahub_backups/"))
+            }
             .map { obj ->
                 S3BackupItem(
                     key = obj.key,

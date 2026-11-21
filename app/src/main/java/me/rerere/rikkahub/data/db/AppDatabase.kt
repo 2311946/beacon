@@ -30,8 +30,12 @@ import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.db.entity.MediaCreationNodeEntity
 import me.rerere.rikkahub.data.db.entity.MediaCreationRecordEntity
 import me.rerere.rikkahub.data.db.entity.MediaCreationSessionEntity
+import me.rerere.rikkahub.data.db.entity.MemoryChunkEntity
 import me.rerere.rikkahub.data.db.entity.MemoryConsolidationEntity
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
+import me.rerere.rikkahub.data.db.entity.MemoryIndexJobEntity
+import me.rerere.rikkahub.data.db.entity.MemoryMetadataEntity
+import me.rerere.rikkahub.data.db.entity.MemorySourceEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.entity.TranslationHistoryEntity
 import me.rerere.rikkahub.data.db.entity.UsageRecordEntity
@@ -47,6 +51,10 @@ import me.rerere.rikkahub.utils.JsonInstant
     entities = [
         ConversationEntity::class,
         MemoryFileEntity::class,
+        MemoryMetadataEntity::class,
+        MemorySourceEntity::class,
+        MemoryChunkEntity::class,
+        MemoryIndexJobEntity::class,
         MemoryConsolidationEntity::class,
         GenMediaEntity::class,
         MessageNodeEntity::class,
@@ -62,7 +70,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutonomousActivityEntity::class,
         AssistantCalendarDayEntity::class,
     ],
-    version = 36,
+    version = 38,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),

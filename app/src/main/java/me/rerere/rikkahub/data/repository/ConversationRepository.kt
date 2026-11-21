@@ -420,6 +420,26 @@ class ConversationRepository(
     suspend fun searchMessagesOfAssistants(keyword: String, assistantIds: Set<Uuid>) =
         messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
 
+    /** 精确会话范围在 FTS 的 LIMIT 之前过滤，空集合不会退回全库。 */
+    suspend fun searchMessagesOfConversations(keyword: String, conversationIds: Set<Uuid>, offset: Int = 0) =
+        messageFtsManager.search(
+            keyword = keyword,
+            conversationIds = conversationIds.map { it.toString() },
+            offset = offset,
+        )
+
+    suspend fun searchMessagesOfConversationsPage(
+        keyword: String,
+        conversationIds: Set<Uuid>,
+        limit: Int,
+        offset: Int,
+    ) = messageFtsManager.search(
+        keyword = keyword,
+        conversationIds = conversationIds.map { it.toString() },
+        limit = limit,
+        offset = offset,
+    )
+
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
         val allIds = conversationDAO.getAllIds()

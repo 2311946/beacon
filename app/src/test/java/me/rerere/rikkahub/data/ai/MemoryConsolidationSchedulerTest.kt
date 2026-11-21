@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.ai
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -21,7 +23,7 @@ class MemoryConsolidationSchedulerTest {
     private val chat = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
     private val otherChat = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
 
-    private class Call(val conversationIds: Set<Uuid>, val fullReview: Boolean)
+    private class Call(val conversationIds: Set<Uuid>, val fullReview: Boolean, val memoryId: String)
 
     /** 扮演数据库和模型：[pending] 是还没整理的轮数，整理成功后清掉 */
     private inner class FakeWorker : MemoryConsolidationWorker {
@@ -33,6 +35,10 @@ class MemoryConsolidationSchedulerTest {
         // 助手关了自动整理的对话
         val manual = mutableSetOf<Uuid>()
         val calls = mutableListOf<Call>()
+        val groupPending = mutableMapOf<Pair<String, Uuid>, PendingMemoryConversation>()
+        val failures = mutableMapOf<String, Exception>()
+        val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
+        var pendingFailure: Exception? = null
         var failure: Exception? = null
         var gate: CompletableDeferred<Unit>? = null
 
@@ -54,11 +60,19 @@ class MemoryConsolidationSchedulerTest {
         override suspend fun pendingOf(conversation: Conversation) =
             pending[conversation.id]?.let { item(conversation.id, it) }
 
+        override suspend fun pendingAllOf(conversation: Conversation): List<PendingMemoryConversation> {
+            pendingFailure?.let { throw it }
+            return groupPending.values.filter { it.conversationId == conversation.id }
+                .ifEmpty { super.pendingAllOf(conversation) }
+        }
+
         override suspend fun memoryIdsWithUpdates() =
-            pending.map { (id, turns) -> item(id, turns).memoryId }.distinct()
+            (pending.map { (id, turns) -> item(id, turns).memoryId } +
+                groupPending.values.map { it.memoryId }).distinct()
 
         override suspend fun findPending(memoryId: String): List<PendingMemoryConversation> {
-            val found = pending.map { (id, turns) -> item(id, turns) }.filter { it.memoryId == memoryId }
+            val found = (pending.map { (id, turns) -> item(id, turns) } + groupPending.values)
+                .filter { it.memoryId == memoryId }
             scanGate?.await()
             return found
         }
@@ -72,15 +86,24 @@ class MemoryConsolidationSchedulerTest {
             conversationIds: Set<Uuid>,
             fullReview: Boolean,
         ): MemoryConsolidationRun? {
-            calls += Call(conversationIds, fullReview)
+            calls += Call(conversationIds, fullReview, memoryId)
+            gates[memoryId]?.await()
             gate?.await()
+            failures[memoryId]?.let { throw it }
             failure?.let { throw it }
             val batch = conversationIds.take(perRun)
             if (batch.isEmpty() && !fullReview) return null
             if (!stuck) {
                 batch.forEach { id ->
-                    val left = pending.getValue(id) - turnsPerRun
-                    if (left > 0) pending[id] = left else pending.remove(id)
+                    val key = memoryId to id
+                    val groupItem = groupPending[key]
+                    if (groupItem != null) {
+                        val left = groupItem.turns - turnsPerRun
+                        if (left > 0) groupPending[key] = groupItem.copy(turns = left) else groupPending.remove(key)
+                    } else {
+                        val left = pending.getValue(id) - turnsPerRun
+                        if (left > 0) pending[id] = left else pending.remove(id)
+                    }
                 }
             }
             return MemoryConsolidationRun(
@@ -104,7 +127,12 @@ class MemoryConsolidationSchedulerTest {
         keepAlive = {
             activeHolds++
             totalHolds++
-            AutoCloseable { activeHolds-- }
+            var closed = false
+            AutoCloseable {
+                check(!closed) { "保活句柄不能重复释放" }
+                closed = true
+                activeHolds--
+            }
         },
         isAppVisible = { appVisible },
         idleDelay = 2.minutes,
@@ -114,6 +142,10 @@ class MemoryConsolidationSchedulerTest {
     private fun MemoryConsolidationScheduler.finishTurn(conversation: Conversation, pendingTurns: Int) {
         worker.pending[conversation.id] = pendingTurns
         onTurnFinished(conversation)
+    }
+
+    private fun groupPending(memoryId: String, turns: Int = 1, automatic: Boolean = true) {
+        worker.groupPending[memoryId to chat.id] = PendingMemoryConversation(chat.id, memoryId, turns, automatic)
     }
 
     @Test
@@ -492,6 +524,208 @@ class MemoryConsolidationSchedulerTest {
 
         assertEquals(1, worker.calls.size)
         assertFalse(scheduler.statusOf(memoryId).first().running)
+    }
+
+    @Test
+    fun `a group turn schedules every member store with its own turn threshold`() = runTest {
+        val scheduler = scheduler()
+        groupPending(memoryId, turns = 3)
+        groupPending("other memory", turns = 1)
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertEquals(listOf(memoryId), worker.calls.map { it.memoryId })
+        assertEquals(0, scheduler.statusOf(memoryId).first().pendingTurns)
+        assertEquals(1, scheduler.statusOf("other memory").first().pendingTurns)
+        advanceTimeBy(2.minutes + 1.seconds)
+        assertEquals(listOf(memoryId, "other memory"), worker.calls.map { it.memoryId })
+        assertTrue(worker.calls.all { it.conversationIds == setOf(chat.id) && !it.fullReview })
+    }
+
+    @Test
+    fun `leaving a group starts every automatic member store`() = runTest {
+        val scheduler = scheduler()
+        groupPending(memoryId)
+        groupPending("other memory")
+        groupPending("manual memory", automatic = false)
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        scheduler.onConversationLeft(chat.id)
+        runCurrent()
+
+        assertEquals(setOf(memoryId, "other memory"), worker.calls.map { it.memoryId }.toSet())
+        assertEquals(1, scheduler.statusOf("manual memory").first().pendingTurns)
+        advanceTimeBy(5.minutes)
+        assertEquals(2, worker.calls.size)
+    }
+
+    @Test
+    fun `a manual group member waits for its own organize without blocking automatic members`() = runTest {
+        val scheduler = scheduler()
+        groupPending(memoryId, turns = 3, automatic = false)
+        groupPending("other memory", turns = 3)
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+        scheduler.onAppHidden()
+        scheduler.onConversationLeft(chat.id)
+        advanceTimeBy(5.minutes)
+
+        assertEquals(listOf("other memory"), worker.calls.map { it.memoryId })
+        assertEquals(3, scheduler.statusOf(memoryId).first().pendingTurns)
+        scheduler.organize(memoryId)
+        runCurrent()
+        assertEquals(listOf("other memory", memoryId), worker.calls.map { it.memoryId })
+        assertTrue(worker.calls.last().fullReview)
+    }
+
+    @Test
+    fun `one failed group store does not stop another store or leak background holds`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        groupPending(memoryId, turns = 3)
+        groupPending("other memory", turns = 3)
+        worker.failures[memoryId] = IllegalStateException("model unavailable")
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertEquals(setOf(memoryId, "other memory"), worker.calls.map { it.memoryId }.toSet())
+        assertEquals("model unavailable", scheduler.statusOf(memoryId).first().lastRun?.error)
+        assertEquals(3, scheduler.statusOf(memoryId).first().pendingTurns)
+        assertEquals(0, scheduler.statusOf("other memory").first().pendingTurns)
+        assertFalse(scheduler.statusOf(memoryId).first().running)
+        assertFalse(scheduler.statusOf("other memory").first().running)
+        assertEquals(0, activeHolds)
+        scheduler.onConversationLeft(chat.id)
+        advanceTimeBy(5.minutes)
+        assertEquals(2, worker.calls.size)
+    }
+
+    @Test
+    fun `a blocked group store does not delay another store reaching its limit`() = runTest {
+        val scheduler = scheduler()
+        groupPending(memoryId, turns = 3)
+        groupPending("other memory", turns = 3)
+        val gate = CompletableDeferred<Unit>()
+        worker.gates[memoryId] = gate
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertEquals(setOf(memoryId, "other memory"), worker.calls.map { it.memoryId }.toSet())
+        assertTrue(scheduler.statusOf(memoryId).first().running)
+        assertFalse(scheduler.statusOf("other memory").first().running)
+        assertEquals(0, scheduler.statusOf("other memory").first().pendingTurns)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(0, activeHolds)
+    }
+
+    @Test
+    fun `background group timers own independent holds until both stores finish`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        groupPending(memoryId)
+        groupPending("other memory")
+        val gate = CompletableDeferred<Unit>()
+        worker.gates["other memory"] = gate
+
+        scheduler.onTurnFinished(chat)
+        assertEquals(1, activeHolds)
+        runCurrent()
+        assertEquals(2, activeHolds)
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+        assertEquals(2, activeHolds)
+        advanceTimeBy(2.minutes + 1.seconds)
+        assertEquals(2, worker.calls.size)
+        assertTrue(activeHolds > 0)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(0, activeHolds)
+    }
+
+    @Test
+    fun `canceling background group timers releases every hold`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        groupPending(memoryId)
+        groupPending("other memory")
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+        assertEquals(2, activeHolds)
+
+        backgroundScope.cancel()
+        runCurrent()
+
+        assertTrue(worker.calls.isEmpty())
+        assertEquals(0, activeHolds)
+    }
+
+    @Test
+    fun `canceling active background group runs releases all run and turn holds`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        groupPending(memoryId, turns = 3)
+        groupPending("other memory", turns = 3)
+        worker.gate = CompletableDeferred()
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+        assertEquals(2, worker.calls.size)
+        assertTrue(activeHolds > 0)
+
+        backgroundScope.cancel()
+        runCurrent()
+
+        assertEquals(0, activeHolds)
+        assertFalse(scheduler.statusOf(memoryId).first().running)
+        assertFalse(scheduler.statusOf("other memory").first().running)
+    }
+
+    @Test
+    fun `a hidden manual only group turn leaves no background timer hold`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        groupPending(memoryId, turns = 3, automatic = false)
+        groupPending("other memory", turns = 3, automatic = false)
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertEquals(1, totalHolds)
+        assertEquals(0, activeHolds)
+        advanceTimeBy(5.minutes)
+        assertTrue(worker.calls.isEmpty())
+    }
+
+    @Test
+    fun `a canceled pending lookup releases its background hold`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        worker.pendingFailure = CancellationException("查询取消")
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertTrue(worker.calls.isEmpty())
+        assertEquals(0, activeHolds)
+    }
+
+    @Test
+    fun `an already canceled scope does not leak the initial background hold`() = runTest {
+        val scheduler = scheduler()
+        appVisible = false
+        backgroundScope.cancel()
+
+        scheduler.onTurnFinished(chat)
+        runCurrent()
+
+        assertTrue(worker.calls.isEmpty())
+        assertEquals(0, activeHolds)
     }
 
     @Test

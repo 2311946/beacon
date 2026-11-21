@@ -19,6 +19,14 @@ import me.rerere.rikkahub.data.datastore.StickerGroup
 import me.rerere.rikkahub.data.datastore.UsageBudgetState
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
+import me.rerere.rikkahub.data.db.entity.MemoryChunkEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
+import me.rerere.rikkahub.data.db.entity.MemoryIndexJobEntity
+import me.rerere.rikkahub.data.db.entity.MemoryMetadataEntity
+import me.rerere.rikkahub.data.db.entity.MemorySourceEntity
+import me.rerere.rikkahub.data.model.MemorySource
+import me.rerere.rikkahub.data.model.MemorySourceKind
+import me.rerere.rikkahub.data.model.memoryContentHash
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -158,6 +166,133 @@ class BackupManagerTest {
         }
         manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
         assertEquals("live", probe(liveDatabase))
+    }
+
+    @Test fun memoryBodyAndFourSideTablesSurviveFullZipRestoreWithAnotherPendingJob() = runBlocking {
+        val namespace = "backup-assistant"
+        val file = MemoryFileEntity(namespace, "notes/indexed.md", "第一段记忆\n第二段记忆", 101L)
+        val metadata = MemoryMetadataEntity(
+            assistantId = namespace,
+            path = file.path,
+            scopeKind = "ASSISTANT",
+            category = "USER_FACT",
+            lifecycle = "ACTIVE",
+            contentHash = memoryContentHash(file.content),
+            revision = "backup-indexed-revision",
+            updatedAt = file.updatedAt,
+        )
+        val provenance = MemorySource(
+            kind = MemorySourceKind.GROUP_CHAT,
+            conversationId = "backup-conversation",
+            messageId = "backup-message",
+            groupId = "backup-group",
+            speakerId = "backup-speaker",
+            participantIds = listOf(namespace, "another-participant"),
+            sourceContentHash = memoryContentHash("来源引用"),
+            occurredAt = 99L,
+        )
+        provenance.validate()
+        val sources = listOf(
+            MemorySourceEntity(
+                assistantId = namespace,
+                path = file.path,
+                sourceId = "a-chat-source",
+                kind = provenance.kind.name,
+                memoryRevision = metadata.revision,
+                conversationId = provenance.conversationId,
+                messageId = provenance.messageId,
+                sourceJson = JsonInstant.encodeToString(provenance),
+            ),
+            MemorySourceEntity(
+                assistantId = namespace,
+                path = file.path,
+                sourceId = "b-stale-source",
+                kind = MemorySourceKind.MANUAL.name,
+                status = "STALE",
+                memoryRevision = "older-source-revision",
+                sourceJson = JsonInstant.encodeToString(MemorySource(kind = MemorySourceKind.MANUAL)),
+            ),
+        )
+        val chunks = listOf("第一段记忆", "第二段记忆").mapIndexed { index, content ->
+            MemoryChunkEntity(
+                assistantId = namespace,
+                path = file.path,
+                chunkIndex = index,
+                memoryRevision = metadata.revision,
+                contentHash = metadata.contentHash,
+                chunkerVersion = 2,
+                content = content,
+            )
+        }
+        val pendingFile = MemoryFileEntity(namespace, "notes/pending.md", "尚待索引的另一份记忆", 202L)
+        val pendingMetadata = metadata.copy(
+            path = pendingFile.path,
+            category = "ROLE_EXPERIENCE",
+            contentHash = memoryContentHash(pendingFile.content),
+            revision = "backup-pending-revision",
+            updatedAt = pendingFile.updatedAt,
+        )
+        val pendingSources = listOf(sources.first().copy(
+            path = pendingFile.path,
+            sourceId = "pending-source",
+            memoryRevision = pendingMetadata.revision,
+        ))
+        val pendingJob = MemoryIndexJobEntity(
+            namespace, pendingFile.path, pendingMetadata.revision, pendingMetadata.contentHash, pendingFile.updatedAt,
+        )
+        val dao = liveDatabase.memoryDao()
+        dao.saveState(file, metadata, sources)
+        dao.saveState(pendingFile, pendingMetadata, pendingSources)
+        val indexedJob = dao.getIndexJobs(namespace).single { it.path == file.path }
+        assertTrue(dao.publishChunks(indexedJob, chunks))
+        assertEquals(listOf(pendingJob), dao.getIndexJobs(namespace))
+        assertEquals(chunks, dao.getChunks(namespace, file.path))
+
+        val archive = manager.createBackup(includeDatabase = true, includeFiles = false)
+        ZipFile(archive).use { zip ->
+            assertTrue(zip.getEntry(DatabaseBackup.ARCHIVE_DATABASE) != null)
+            assertTrue(zip.getEntry("settings.json") != null)
+            assertEquals(null, zip.getEntry(DatabaseBackup.WAL))
+            assertEquals(null, zip.getEntry(DatabaseBackup.SHM))
+        }
+        // 删除当前库内容，确保恢复断言不能误读仍留在内存或磁盘中的原始数据。
+        dao.deleteFilesOfAssistant(namespace)
+        assertTrue(dao.getFilesOfAssistant(namespace).isEmpty())
+        assertTrue(dao.getIndexJobs(namespace).isEmpty())
+        listOf(file, pendingFile).forEach { entry ->
+            assertEquals(null, dao.getMetadata(namespace, entry.path))
+            assertTrue(dao.getSources(namespace, entry.path).isEmpty())
+            assertTrue(dao.getChunks(namespace, entry.path).isEmpty())
+        }
+
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        assertTrue(dao.getFilesOfAssistant(namespace).isEmpty())
+        val pending = File(context.noBackupFilesDir, "backup-restore/pending")
+        assertTrue(File(pending, "payload/database/rikka_hub").isFile)
+        // 不应用 settings，避免写入被测应用的真实 SettingsStore。
+        assertTrue(File(pending, "settings.json").delete())
+        liveDatabase.close()
+        assertTrue(BackupManager.applyPendingRestore(context, JsonInstant))
+        liveDatabase = AppDatabaseFactory.create(context)
+        val restored = liveDatabase.memoryDao()
+
+        assertEquals(listOf(file, pendingFile), restored.getFilesOfAssistant(namespace))
+        assertEquals(file, restored.getFile(namespace, file.path))
+        assertEquals(metadata, restored.getMetadata(namespace, file.path))
+        assertEquals(sources, restored.getSources(namespace, file.path))
+        assertEquals(provenance, JsonInstant.decodeFromString<MemorySource>(
+            restored.getSources(namespace, file.path).first().sourceJson,
+        ))
+        assertEquals(chunks, restored.getChunks(namespace, file.path))
+        assertEquals(pendingFile, restored.getFile(namespace, pendingFile.path))
+        assertEquals(pendingMetadata, restored.getMetadata(namespace, pendingFile.path))
+        assertEquals(pendingSources, restored.getSources(namespace, pendingFile.path))
+        assertTrue(restored.getChunks(namespace, pendingFile.path).isEmpty())
+        assertEquals(listOf(pendingJob), restored.getIndexJobs(namespace))
+        liveDatabase.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use {
+            assertFalse("ZIP 往返后不应留下孤立的记忆旁表行", it.moveToFirst())
+        }
+        assertFalse(pending.exists())
     }
 
     @Test fun filesDisabledExportsOnlySettingsManifestAndWhitelistedPreferences() = runBlocking {

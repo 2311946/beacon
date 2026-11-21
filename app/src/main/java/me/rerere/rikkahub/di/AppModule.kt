@@ -167,6 +167,7 @@ val appModule = module {
             conversationRepo = get(),
             chatService = get(),
             providerManager = get(),
+            memoryConsolidationScheduler = get(),
         )
     }
 

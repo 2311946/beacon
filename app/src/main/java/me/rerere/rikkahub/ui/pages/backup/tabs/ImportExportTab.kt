@@ -29,6 +29,7 @@ import me.rerere.hugeicons.stroke.FileExport
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.sync.BackupManager
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
@@ -199,7 +200,7 @@ fun ImportExportTab(
                     {
                         val timestamp = LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                        createDocumentLauncher.launch("rikkahub_backup_$timestamp.zip")
+                        createDocumentLauncher.launch("${BackupManager.BACKUP_FILE_PREFIX}$timestamp.zip")
                     }
                 } else null,
                 headlineContent = { Text(stringResource(R.string.backup_page_local_backup_export)) },

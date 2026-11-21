@@ -44,7 +44,7 @@ class BackupManager(
 
     suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-        val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
+        val archive = File.createTempFile("$BACKUP_FILE_PREFIX${timestamp}-", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.awaitLoaded()
@@ -257,6 +257,13 @@ class BackupManager(
     }
 
     companion object {
+        const val BACKUP_FILE_PREFIX = "beacon-backup-"
+
+        /** Remote listing only; local restore validates ZIP contents, not its filename. */
+        fun isBackupFileName(name: String): Boolean = name.endsWith(".zip") &&
+            listOf(BACKUP_FILE_PREFIX, "rikkahub-backup-", "rikkahub_backup_", "backup_")
+                .any { name.startsWith(it) }
+
         private val ATTACHMENT_FOLDERS = listOf(
             FileFolders.UPLOAD,
             FileFolders.SKILLS,

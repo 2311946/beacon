@@ -16,6 +16,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.MemoryWriteContext
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.MemoryWriteResult
 import java.time.Instant
@@ -45,6 +46,10 @@ private const val IF_VERSION_DESCRIPTION =
 fun buildMemoryTools(
     repository: MemoryRepository,
     assistantId: String,
+    // 整理器只接受已展示且重新校验过的引用；模型不能指定 namespace 或伪造来源元数据。
+    writeContext: (suspend (List<String>) -> MemoryWriteContext)? = null,
+    beforeAccess: suspend () -> Unit = {},
+    validateWrite: (suspend (path: String, candidateFullContent: String, refs: List<String>) -> Unit)? = null,
 ): List<Tool> = listOf(
     Tool(
         name = MemoryToolNames.READ,
@@ -63,6 +68,7 @@ fun buildMemoryTools(
             )
         },
         execute = { args ->
+            beforeAccess()
             // 有些模型只读一个文件时会直接传字符串
             val paths = when (val path = args.jsonObject["path"]) {
                 is JsonArray -> path.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
@@ -71,7 +77,7 @@ fun buildMemoryTools(
             }.take(MAX_READ_PATHS)
             if (paths.isEmpty()) error("path is required")
 
-            val files = paths.associateWith { repository.getFile(assistantId, it) }
+            val files = paths.associateWith { repository.getActiveFile(assistantId, it) }
             toolOutput {
                 put("files", buildJsonArray {
                     files.values.filterNotNull().forEach { file ->
@@ -100,16 +106,21 @@ fun buildMemoryTools(
                 properties = buildJsonObject {
                     put("path", stringSchema("Path of the file, e.g. /topics/food.md"))
                     put("content", stringSchema("The complete file content"))
+                    if (writeContext != null) put("source_refs", memorySourceRefsSchema())
                     put("if_version", stringSchema("\"new\" for a new file, otherwise the file's current version"))
                 },
-                required = listOf("path", "content", "if_version")
+                required = listOf("path", "content", "if_version") + if (writeContext != null) listOf("source_refs") else emptyList()
             )
         },
         execute = { args ->
+            beforeAccess()
             val path = args.string("path")
             val content = args.string("content")
             guarded(content) {
-                repository.writeFile(assistantId, path, content, args.string("if_version"))
+                val refs = args.sourceRefs()
+                val context = writeContext?.invoke(refs)
+                MemoryFile.normalizePath(path)?.let { validateWrite?.invoke(it, content, refs) }
+                repository.writeFile(assistantId, path, content, args.string("if_version"), context = context, activeOnly = true)
             }.toToolOutput(path)
         }
     ),
@@ -125,16 +136,28 @@ fun buildMemoryTools(
                     put("path", stringSchema("Path of the file"))
                     put("old_str", stringSchema("Text to replace; must match exactly one place"))
                     put("new_str", stringSchema("Replacement text; empty to delete"))
+                    if (writeContext != null) put("source_refs", memorySourceRefsSchema())
                     put("if_version", stringSchema(IF_VERSION_DESCRIPTION))
                 },
-                required = listOf("path", "old_str", "new_str", "if_version")
+                required = listOf("path", "old_str", "new_str", "if_version") + if (writeContext != null) listOf("source_refs") else emptyList()
             )
         },
         execute = { args ->
+            beforeAccess()
             val path = args.string("path")
+            val oldStr = args.string("old_str")
             val newStr = args.string("new_str")
             guarded(newStr) {
-                repository.replaceInFile(assistantId, path, args.string("old_str"), newStr, args.string("if_version"))
+                val refs = args.sourceRefs()
+                val context = writeContext?.invoke(refs)
+                if (validateWrite != null) {
+                    repository.getActiveFile(assistantId, path)?.let { current ->
+                        replacementCandidate(current.content, oldStr, newStr)?.let { candidate ->
+                            validateWrite(current.path, candidate, refs)
+                        }
+                    }
+                }
+                repository.replaceInFile(assistantId, path, oldStr, newStr, args.string("if_version"), context = context, activeOnly = true)
             }.toToolOutput(path)
         }
     ),
@@ -146,17 +169,27 @@ fun buildMemoryTools(
                 properties = buildJsonObject {
                     put("path", stringSchema("Path of the file"))
                     put("content", stringSchema("The line to append"))
+                    if (writeContext != null) put("source_refs", memorySourceRefsSchema())
                     put("if_version", stringSchema(IF_VERSION_DESCRIPTION))
                 },
-                required = listOf("path", "content", "if_version")
+                required = listOf("path", "content", "if_version") + if (writeContext != null) listOf("source_refs") else emptyList()
             )
         },
         execute = { args ->
+            beforeAccess()
             val path = args.string("path")
             val content = args.string("content")
             if (content.isBlank()) error("content must not be blank")
             guarded(content) {
-                repository.appendToFile(assistantId, path, content, args.string("if_version"))
+                val refs = args.sourceRefs()
+                val context = writeContext?.invoke(refs)
+                if (validateWrite != null) {
+                    repository.getActiveFile(assistantId, path)?.let { current ->
+                        val separator = if (current.content.isEmpty() || current.content.endsWith("\n")) "" else "\n"
+                        validateWrite(current.path, current.content + separator + content.trimEnd('\n', '\r') + "\n", refs)
+                    }
+                }
+                repository.appendToFile(assistantId, path, content, args.string("if_version"), context = context, activeOnly = true)
             }.toToolOutput(path)
         }
     ),
@@ -173,8 +206,9 @@ fun buildMemoryTools(
             )
         },
         execute = { args ->
+            beforeAccess()
             val path = args.string("path")
-            repository.deleteFile(assistantId, path, args.string("if_version")).toToolOutput(path)
+            repository.deleteFile(assistantId, path, args.string("if_version"), activeOnly = true).toToolOutput(path)
         }
     ),
     Tool(
@@ -188,8 +222,9 @@ fun buildMemoryTools(
             )
         },
         execute = { args ->
+            beforeAccess()
             val prefix = (args.jsonObject["path_prefix"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            val files = repository.getFiles(assistantId).filter { it.path.startsWith(prefix) }
+            val files = repository.getActiveFiles(assistantId).filter { it.path.startsWith(prefix) }
             toolOutput {
                 put("files", buildJsonArray {
                     files.forEach { file ->
@@ -205,6 +240,23 @@ fun buildMemoryTools(
     ),
 )
 
+// 必须与 Repository 的唯一匹配和整行删除规则一致；不匹配时由 Repository 返回原有错误。
+private fun replacementCandidate(content: String, oldStr: String, newStr: String): String? {
+    if (oldStr.isEmpty()) return null
+    val index = content.indexOf(oldStr)
+    if (index < 0 || content.indexOf(oldStr, index + 1) >= 0) return null
+    var start = index
+    var end = index + oldStr.length
+    if (newStr.isEmpty()) {
+        val atLineStart = start == 0 || content[start - 1] == '\n'
+        val atLineEnd = end == content.length || content[end] == '\n'
+        if (atLineStart && atLineEnd) {
+            if (end < content.length) end++ else if (start > 0) start--
+        }
+    }
+    return content.substring(0, start) + newStr + content.substring(end)
+}
+
 /** 这次工具调用成功改动的记忆文件路径；不是写工具、还没执行或写入被拒绝时返回 null */
 fun UIMessagePart.Tool.memoryWritePath(): String? {
     if (toolName !in MemoryToolNames.WRITES || !isExecuted) return null
@@ -213,6 +265,23 @@ fun UIMessagePart.Tool.memoryWritePath(): String? {
     }.getOrNull() as? JsonObject ?: return null
     if ("error" in result) return null
     return (result["path"] as? JsonPrimitive)?.contentOrNull
+}
+
+private fun memorySourceRefsSchema() = buildJsonObject {
+    put("type", "array")
+    put("items", stringSchema("Exact conversationId/messageId reference already shown in the transcript or conversation tools"))
+    put("maxItems", 40)
+    put("description", "References for this write only. Never claim another speaker's statements as your own experience. Empty only for full-review rearrangement without new facts.")
+}
+
+private fun JsonElement.sourceRefs(): List<String> {
+    val refs = jsonObject["source_refs"] ?: return emptyList()
+    require(refs is JsonArray && refs.size <= 40) { "source_refs must be an array of at most 40 references" }
+    return refs.map {
+        val value = it as? JsonPrimitive ?: error("Invalid source reference")
+        require(value.isString && value.content.isNotBlank() && value.content.length <= 100) { "Invalid source reference" }
+        value.content
+    }.distinct()
 }
 
 private fun stringSchema(description: String) = buildJsonObject {

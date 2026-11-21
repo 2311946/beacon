@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.data.model.Conversation
@@ -76,6 +77,10 @@ interface MemoryConsolidationWorker {
     /** [conversation] 里还没整理的轮次；助手没开记忆或没有新的轮次时返回 null，没开自动整理也照样返回 */
     suspend fun pendingOf(conversation: Conversation): PendingMemoryConversation?
 
+    /** 群聊按成员返回所有待整理的记忆库；单聊沿用原来的查询。 */
+    suspend fun pendingAllOf(conversation: Conversation): List<PendingMemoryConversation> =
+        listOfNotNull(pendingOf(conversation))
+
     /** 可能有对话没整理完的记忆库。只按更新时间粗筛，不保证真有新的轮次 */
     suspend fun memoryIdsWithUpdates(): List<String>
 
@@ -137,24 +142,21 @@ class MemoryConsolidationScheduler(
     /** 一轮对话结束：空闲一段时间后整理，攒够轮数就不再等 */
     fun onTurnFinished(conversation: Conversation) {
         // 应用不在前台时，聊天生成的前台服务一释放进程就可能被冻结，空闲计时走不完。
-        // 所以趁它还在先把保活占住，一直占到这次整理结束
+        // 所以趁它还在先占住保活；延时整理交给各记忆库的定时器独立接住
         val hold = if (isAppVisible()) null else keepAlive.acquire()
         scope.launch {
-            var handedOver = false
-            try {
-                val item = worker.pendingOf(conversation) ?: return@launch
-                markPending(item)
-                if (!item.automatic) return@launch
-                if (item.turns >= maxPendingTurns) {
-                    runAutomatically(item.memoryId)
-                } else {
-                    restartTimer(item.memoryId, hold)
-                    handedOver = true
+            val items = worker.pendingAllOf(conversation)
+            items.forEach(::markPending)
+            supervisorScope {
+                items.filter { it.automatic }.groupBy { it.memoryId }.forEach { (memoryId, members) ->
+                    if (members.any { it.turns >= maxPendingTurns }) {
+                        launch { runAutomatically(memoryId) }
+                    } else {
+                        restartTimer(memoryId)
+                    }
                 }
-            } finally {
-                if (!handedOver) hold?.close()
             }
-        }
+        }.invokeOnCompletion { hold?.close() }
     }
 
     /** [fork] 是从另一个对话分叉出来的：复制过来的轮次由原对话负责整理，这里不再整理一遍 */
@@ -169,10 +171,10 @@ class MemoryConsolidationScheduler(
 
     /** 用户离开了对话，不会马上再有新消息，不用等到空闲 */
     fun onConversationLeft(conversationId: Uuid) {
-        val memoryId = synchronized(lock) {
-            pending.entries.firstOrNull { it.value[conversationId]?.automatic == true }?.key
-        } ?: return
-        launchRun(memoryId)
+        val memoryIds = synchronized(lock) {
+            pending.filterValues { it[conversationId]?.automatic == true }.keys.toList()
+        }
+        memoryIds.forEach(::launchRun)
     }
 
     /** 应用启动时补上进程被杀前没来得及整理的对话 */
@@ -286,8 +288,9 @@ class MemoryConsolidationScheduler(
     private fun pendingOf(memoryId: String, manual: Boolean): Map<Uuid, PendingMemoryConversation> =
         synchronized(lock) { pending[memoryId].orEmpty().filterValues { manual || it.automatic } }
 
-    // [hold] 交给定时器管：占到整理结束，定时器被取消或被新的顶掉时放开
-    private fun restartTimer(memoryId: String, hold: AutoCloseable? = null) {
+    // 每个后台定时器独立保活，不能把同一个句柄交给群聊的多个记忆库。
+    private fun restartTimer(memoryId: String) {
+        val hold = if (isAppVisible()) null else keepAlive.acquire()
         val timer = scope.launch(start = CoroutineStart.LAZY) {
             delay(idleDelay)
             // 整理开始时会取消还在等的定时器，先把自己摘出来，免得被自己取消

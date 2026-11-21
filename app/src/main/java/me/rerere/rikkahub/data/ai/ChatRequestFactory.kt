@@ -43,12 +43,10 @@ import me.rerere.rikkahub.data.model.StickerReplyResolver
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.data.repository.memoryId
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -70,7 +68,7 @@ class ChatTurnContext(
     val conversationId: Uuid,
     val conversationSystemPrompt: String?,
     val workspaceCwd: String?,
-    val memories: List<MemoryFile>,
+    val memoryNamespace: String,
     val tools: List<Tool>,
     val stickerPrompt: String = "",
     val chatContext: String = "",
@@ -122,6 +120,7 @@ class ChatRequestFactory(
     ): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
         val assistant = settings.getAssistantOf(conversation)
+        val memoryNamespace = settings.chatMemoryId(assistant, conversation)
         val model = settings.getChatModelOf(conversation)
             ?: throw IllegalStateException("No chat model selected")
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -137,12 +136,13 @@ class ChatRequestFactory(
             stickerPrompt = StickerReplyResolver.buildPrompt(StickerStore.get(context).groups.value),
             conversationSystemPrompt = conversation.customSystemPrompt,
             workspaceCwd = conversation.workspaceCwd,
-            memories = if (assistant.enableMemory) memoryRepository.getFiles(assistant.memoryId) else emptyList(),
+            memoryNamespace = memoryNamespace,
             tools = chatToolFactory.createTools(
                 settings = settings,
                 assistant = assistant,
                 model = model,
                 workspaceCwd = conversation.workspaceCwd,
+                conversation = conversation,
             ),
         )
     }
@@ -289,6 +289,11 @@ class ChatRequestFactory(
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     ): StepRequest {
         val assistant = turn.assistant
+        // 每个工具步骤/重试重新读取，避免本轮开始后已停用的记忆仍从旧快照发出。
+        val activeMemories = if (assistant.enableMemory) {
+            memoryRepository.getActiveFiles(turn.memoryNamespace).sortedBy { it.path }
+        } else emptyList()
+        val memoryFingerprint = memoryRequestFingerprint(turn.memoryNamespace, activeMemories)
         val voiceCallActive = turn.isVoiceCallActive()
         val requestMessages = buildList {
             val system = buildString {
@@ -345,7 +350,7 @@ class ChatRequestFactory(
             }
             val history = me.rerere.rikkahub.data.ai.transformers.appendMessageDates(imageHistory)
             val dynamicContext = buildString {
-                if (assistant.enableMemory) appendLine(buildMemoryPrompt(turn.memories))
+                if (assistant.enableMemory) appendLine(buildMemoryPrompt(activeMemories))
                 turn.tools.forEach { appendLine(it.systemPrompt(turn.model, messages)) }
             }
             addAll(me.rerere.rikkahub.data.ai.transformers.appendUserContext(history, dynamicContext))
@@ -387,6 +392,7 @@ class ChatRequestFactory(
             turn.settings.displaySetting.userNickname, turn.workspaceCwd.orEmpty(), turn.stickerPrompt,
             turn.settings.chatImageGeneration.toString(),
             voiceCallActive.toString(), turn.groupSystemPrompt,
+            turn.memoryNamespace, memoryFingerprint,
             turn.settings.mediaGenerationProviders.flatMap { provider ->
                 provider.models.filter { it.kind == me.rerere.mediagen.model.MediaKind.IMAGE && provider.capabilities(it.kind) != null }.map { it.id }
             }.toString(),

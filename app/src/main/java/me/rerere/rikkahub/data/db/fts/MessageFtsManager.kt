@@ -137,12 +137,24 @@ class MessageFtsManager(private val database: AppDatabase) {
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
         // 只搜这些助手的对话，null 表示不限
         assistantIds: Collection<String>? = null,
+        // 精确会话范围在 SQL 中过滤，不能先截断全库结果再过滤。
+        conversationIds: Collection<String>? = null,
+        limit: Int = 50,
+        offset: Int = 0,
     ): List<MessageSearchResult> = withContext(Dispatchers.IO) {
+        require(limit >= 0) { "limit 必须非负" }
+        require(offset >= 0) { "offset 必须非负" }
         val results = mutableListOf<MessageSearchResult>()
         if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
+        if (conversationIds != null && conversationIds.isEmpty()) return@withContext results
         val matchQuery = buildFtsMatchQuery(keyword, ::simpleQuery) ?: return@withContext results
         val assistantFilter = if (assistantIds != null) {
             "AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})"
+        } else {
+            ""
+        }
+        val conversationFilter = if (conversationIds != null) {
+            "AND conversation.id IN (${conversationIds.joinToString { "?" }})"
         } else {
             ""
         }
@@ -156,10 +168,17 @@ class MessageFtsManager(private val database: AppDatabase) {
             JOIN conversationentity AS conversation ON conversation.id = message_fts.conversation_id
             WHERE message_fts.text MATCH ?
             $assistantFilter
-            ORDER BY ${sort.orderBy}
-            LIMIT 50
+            $conversationFilter
+            ORDER BY ${sort.orderBy}, message_fts.rowid ASC
+            LIMIT ? OFFSET ?
             """.trimIndent(),
-            arrayOf(matchQuery, *assistantIds.orEmpty().toTypedArray())
+            arrayOf<Any>(
+                matchQuery,
+                *assistantIds.orEmpty().toTypedArray(),
+                *conversationIds.orEmpty().toTypedArray(),
+                limit,
+                offset,
+            )
         )
         Log.i(TAG, "search: $keyword")
         cursor.use {

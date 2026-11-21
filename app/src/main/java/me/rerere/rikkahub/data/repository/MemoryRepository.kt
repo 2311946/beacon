@@ -8,6 +8,19 @@ import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.MemoryCategory
+import me.rerere.rikkahub.data.model.MemoryLifecycle
+import me.rerere.rikkahub.data.model.MemoryScope
+import me.rerere.rikkahub.data.model.MemorySource
+import me.rerere.rikkahub.data.model.MemorySourceKind
+import me.rerere.rikkahub.data.model.MemorySourceStatus
+import me.rerere.rikkahub.data.model.MemoryWriteContext
+import me.rerere.rikkahub.data.model.memoryContentHash
+import me.rerere.rikkahub.data.db.entity.MemoryMetadataEntity
+import me.rerere.rikkahub.data.db.entity.MemorySourceEntity
+import me.rerere.rikkahub.utils.JsonInstant
+import kotlinx.serialization.encodeToString
+import java.util.UUID
 
 sealed interface MemoryWriteResult {
     /** [file] 为 null 表示文件已被删除 */
@@ -45,13 +58,30 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         return memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
     }
 
+    /** 模型上下文和工具只读活跃文件；管理界面继续使用 getFiles/getFile 查看原文。 */
+    suspend fun getActiveFiles(assistantId: String): List<MemoryFile> =
+        memoryDAO.getActiveFiles(assistantId).map { it.toMemoryFile() }
+
+    suspend fun getActiveFile(assistantId: String, path: String): MemoryFile? {
+        val normalized = MemoryFile.normalizePath(path) ?: return null
+        return memoryDAO.getActiveFile(assistantId, normalized)?.toMemoryFile()
+    }
+
+    suspend fun getMetadata(assistantId: String, path: String): MemoryMetadataEntity? =
+        MemoryFile.normalizePath(path)?.let { memoryDAO.getMetadata(assistantId, it) }
+
+    suspend fun getSources(assistantId: String, path: String): List<MemorySourceEntity> =
+        MemoryFile.normalizePath(path)?.let { memoryDAO.getSources(assistantId, it) }.orEmpty()
+
     /** 新建或整体覆盖 */
     suspend fun writeFile(
         assistantId: String,
         path: String,
         content: String,
         ifVersion: String? = null,
-    ): MemoryWriteResult = update(assistantId, path, ifVersion, allowCreate = true) { Edit.Content(content) }
+        context: MemoryWriteContext? = null,
+        activeOnly: Boolean = false,
+    ): MemoryWriteResult = update(assistantId, path, ifVersion, allowCreate = true, context = context, activeOnly = activeOnly) { Edit.Content(content) }
 
     /** 把唯一匹配的 [oldStr] 换成 [newStr]，[newStr] 为空即删除 */
     suspend fun replaceInFile(
@@ -60,7 +90,9 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         oldStr: String,
         newStr: String,
         ifVersion: String?,
-    ): MemoryWriteResult = update(assistantId, path, ifVersion) { current ->
+        context: MemoryWriteContext? = null,
+        activeOnly: Boolean = false,
+    ): MemoryWriteResult = update(assistantId, path, ifVersion, context = context, activeOnly = activeOnly) { current ->
         if (oldStr.isEmpty()) return@update Edit.Reject("old_str must not be empty.")
         val index = current.indexOf(oldStr)
         when {
@@ -80,7 +112,9 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         path: String,
         line: String,
         ifVersion: String?,
-    ): MemoryWriteResult = update(assistantId, path, ifVersion) { current ->
+        context: MemoryWriteContext? = null,
+        activeOnly: Boolean = false,
+    ): MemoryWriteResult = update(assistantId, path, ifVersion, context = context, activeOnly = activeOnly) { current ->
         val separator = if (current.isEmpty() || current.endsWith("\n")) "" else "\n"
         Edit.Content(current + separator + line.trimEnd('\n', '\r') + "\n")
     }
@@ -89,8 +123,10 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         assistantId: String,
         path: String,
         ifVersion: String? = null,
+        activeOnly: Boolean = false,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
+        if (activeOnly && isInactive(assistantId, normalized)) return inactiveFile()
         val current = memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
         if (current == null || (ifVersion != null && ifVersion != current.version)) {
             return MemoryWriteResult.Conflict(current)
@@ -99,15 +135,76 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         MemoryWriteResult.Success(null)
     }
 
-    suspend fun deleteFilesOfAssistant(assistantId: String) {
+    suspend fun deleteFilesOfAssistant(assistantId: String) = writeLock.withLock {
         memoryDAO.deleteFilesOfAssistant(assistantId)
     }
 
-    suspend fun copyFiles(fromAssistantId: String, toAssistantId: String) {
-        val files = memoryDAO.getFilesOfAssistant(fromAssistantId)
-        if (files.isEmpty()) return
-        memoryDAO.upsertFiles(files.map { it.copy(assistantId = toAssistantId) })
+    suspend fun copyFiles(fromAssistantId: String, toAssistantId: String) = writeLock.withLock {
+        if (fromAssistantId == toAssistantId) return@withLock
+        MemoryScope.of(toAssistantId)
+        val originals = memoryDAO.getFilesOfAssistant(fromAssistantId)
+        val files = originals.map { it.copy(assistantId = toAssistantId) }
+        val metadata = originals.mapIndexed { index, original ->
+            val old = memoryDAO.getMetadata(fromAssistantId, original.path)
+            val target = memoryDAO.getMetadata(toAssistantId, original.path)
+            // 目标已停用时不能因复制而复活；源停用也不能被复制成活跃记忆。
+            newMetadata(files[index]).copy(
+                category = old?.category ?: MemoryCategory.UNKNOWN.name,
+                lifecycle = target?.lifecycle?.takeUnless { it == MemoryLifecycle.ACTIVE.name }
+                    ?: old?.lifecycle ?: MemoryLifecycle.ACTIVE.name,
+            )
+        }
+        val sources = metadata.map { meta ->
+            listOf(sourceEntity(meta, MemorySource(
+                kind = MemorySourceKind.COPY,
+                copiedFromNamespace = fromAssistantId,
+                copiedFromPath = meta.path,
+            )))
+        }
+        memoryDAO.saveStates(files, metadata, sources)
     }
+
+    /** 显式策略变更，不改正文和正文时间；新revision使运行中的旧索引结果失效。 */
+    suspend fun setLifecycle(assistantId: String, path: String, lifecycle: MemoryLifecycle): Boolean = writeLock.withLock {
+        val normalized = MemoryFile.normalizePath(path) ?: return@withLock false
+        val file = memoryDAO.getFile(assistantId, normalized) ?: return@withLock false
+        val old = memoryDAO.getMetadata(assistantId, normalized)
+        val metadata = (old ?: newMetadata(file)).copy(
+            lifecycle = lifecycle.name,
+            revision = UUID.randomUUID().toString(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        val sources = memoryDAO.getSources(assistantId, normalized).ifEmpty {
+            listOf(sourceEntity(metadata, MemorySource(MemorySourceKind.UNKNOWN)))
+        }
+        memoryDAO.saveState(file, metadata, sources)
+        true
+    }
+
+    private suspend fun isInactive(assistantId: String, path: String): Boolean =
+        memoryDAO.getMetadata(assistantId, path)?.lifecycle?.let { it != MemoryLifecycle.ACTIVE.name } ?: false
+
+    private fun inactiveFile() = MemoryWriteResult.Rejected("This memory file is inactive; only the user can change its lifecycle.")
+
+    private fun newMetadata(file: MemoryFileEntity) = MemoryMetadataEntity(
+        assistantId = file.assistantId,
+        path = file.path,
+        scopeKind = MemoryScope.of(file.assistantId).kind.name,
+        contentHash = memoryContentHash(file.content),
+        revision = UUID.randomUUID().toString(),
+        updatedAt = file.updatedAt,
+    )
+
+    private fun sourceEntity(metadata: MemoryMetadataEntity, source: MemorySource) = MemorySourceEntity(
+        assistantId = metadata.assistantId,
+        path = metadata.path,
+        sourceId = UUID.randomUUID().toString(),
+        kind = source.kind.name,
+        memoryRevision = metadata.revision,
+        conversationId = source.conversationId,
+        messageId = source.messageId,
+        sourceJson = JsonInstant.encodeToString(source),
+    )
 
     private sealed interface Edit {
         data class Content(val content: String) : Edit
@@ -119,9 +216,14 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         path: String,
         ifVersion: String?,
         allowCreate: Boolean = false,
+        context: MemoryWriteContext? = null,
+        activeOnly: Boolean = false,
         edit: (current: String) -> Edit,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
+        MemoryScope.of(assistantId)
+        context?.validate()
+        if (activeOnly && isInactive(assistantId, normalized)) return inactiveFile()
         val current = memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
         val versionMatches = when (ifVersion) {
             null -> current != null || allowCreate
@@ -148,7 +250,21 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
             content = content,
             updatedAt = System.currentTimeMillis(),
         )
-        memoryDAO.upsertFile(entity)
+        val old = memoryDAO.getMetadata(assistantId, normalized)
+        if (current?.content == content && old != null && context == null) {
+            return MemoryWriteResult.Success(current)
+        }
+        val metadata = newMetadata(entity).copy(
+            category = context?.category?.name ?: old?.category ?: MemoryCategory.UNKNOWN.name,
+            lifecycle = old?.lifecycle ?: MemoryLifecycle.ACTIVE.name,
+        )
+        val oldSources = memoryDAO.getSources(assistantId, normalized).map {
+            // 来源引用保留，但改过正文后不再声称它证明当前文件。
+            if (current?.content != content) it.copy(status = MemorySourceStatus.STALE.name) else it
+        }
+        val provided = context?.sources.orEmpty().ifEmpty { listOf(MemorySource(MemorySourceKind.UNKNOWN)) }
+        val sources = oldSources + provided.distinct().map { sourceEntity(metadata, it) }
+        memoryDAO.saveState(entity, metadata, sources)
         MemoryWriteResult.Success(entity.toMemoryFile())
     }
 

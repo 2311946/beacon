@@ -10,6 +10,7 @@ import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -92,8 +94,9 @@ fun AssistantMemoryPage(id: String) {
         }
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
-    val memories by vm.memories.collectAsStateWithLifecycle()
-    val consolidation by vm.memoryConsolidation.collectAsStateWithLifecycle()
+    val memoryState = vm.memoryState.collectAsStateWithLifecycle().value
+    val memoryId = memoryState.namespace
+    val viewingGlobalMemory = memoryState.isGlobal
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val pagerState = rememberPagerState { MemoryTab.entries.size }
@@ -110,7 +113,7 @@ fun AssistantMemoryPage(id: String) {
                 },
                 actions = {
                     if (MemoryTab.entries[pagerState.currentPage] == MemoryTab.FILES) {
-                        IconButton(onClick = { navController.navigate(Screen.MemoryFile(vm.memoryId, null)) }) {
+                        IconButton(onClick = { navController.navigate(Screen.MemoryFile(memoryId, null)) }) {
                             Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.add))
                         }
                     }
@@ -134,6 +137,30 @@ fun AssistantMemoryPage(id: String) {
                 contentPadding = PaddingValues(horizontal = 16.dp),
             )
 
+            if (MemoryTab.entries[pagerState.currentPage] == MemoryTab.FILES) {
+                FlowRow(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = !viewingGlobalMemory,
+                        onClick = { vm.selectMemoryLibrary(global = false) },
+                        label = { Text("个人库") },
+                    )
+                    FilterChip(
+                        selected = viewingGlobalMemory,
+                        onClick = { vm.selectMemoryLibrary(global = true) },
+                        label = { Text("全局库") },
+                    )
+                }
+                Text(
+                    text = "仅切换查看和整理的记忆库，不改变聊天设置。群聊固定使用个人库，单聊沿用助手设置。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -142,11 +169,12 @@ fun AssistantMemoryPage(id: String) {
             ) { page ->
                 when (MemoryTab.entries[page]) {
                     MemoryTab.FILES -> MemoryFilesTab(
-                        memories = memories,
-                        consolidation = consolidation.takeIf { assistant.enableMemory },
-                        onOrganizeMemory = { vm.organizeMemory() },
-                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
+                        memoryId = memoryId,
+                        memories = memoryState.memories,
+                        consolidation = memoryState.consolidation.takeIf { assistant.enableMemory },
+                        onOrganizeMemory = { vm.organizeMemory(memoryId) },
+                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(memoryId, path)) },
+                        onDeleteMemory = { namespace, memory -> vm.deleteMemory(memory, namespace) },
                         onOpenSettings = {
                             scope.launch { pagerState.animateScrollToPage(MemoryTab.SETTINGS.ordinal) }
                         },
@@ -306,15 +334,16 @@ private fun MemorySettingsTab(
 
 @Composable
 private fun MemoryFilesTab(
+    memoryId: String,
     memories: List<MemoryFile>,
     // 为 null 时不显示整理入口
     consolidation: MemoryConsolidationStatus?,
     onOrganizeMemory: () -> Unit,
     onOpenMemory: (path: String) -> Unit,
-    onDeleteMemory: (MemoryFile) -> Unit,
+    onDeleteMemory: (namespace: String, memory: MemoryFile) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var pendingDeleteMemory by remember { mutableStateOf<MemoryFile?>(null) }
+    var pendingDeleteMemory by remember(memoryId) { mutableStateOf<Pair<String, MemoryFile>?>(null) }
     val memoryGroups = remember(memories) { memories.groupByDirectory() }
 
     // 空列表不滚动，占位才能在剩余空间里居中
@@ -378,7 +407,7 @@ private fun MemoryFilesTab(
                                         text = stringResource(R.string.delete),
                                         icon = HugeIcons.Delete01,
                                         destructive = true,
-                                        onClick = { pendingDeleteMemory = memory },
+                                        onClick = { pendingDeleteMemory = memoryId to memory },
                                     ),
                                 )
                             )
@@ -421,13 +450,13 @@ private fun MemoryFilesTab(
         confirmText = stringResource(R.string.confirm),
         dismissText = stringResource(R.string.cancel),
         onConfirm = {
-            pendingDeleteMemory?.let(onDeleteMemory)
+            pendingDeleteMemory?.let { (namespace, memory) -> onDeleteMemory(namespace, memory) }
             pendingDeleteMemory = null
         },
         onDismiss = { pendingDeleteMemory = null },
         text = {
             Text(
-                text = pendingDeleteMemory?.path.orEmpty(),
+                text = pendingDeleteMemory?.second?.path.orEmpty(),
                 maxLines = 8,
                 overflow = TextOverflow.Ellipsis
             )

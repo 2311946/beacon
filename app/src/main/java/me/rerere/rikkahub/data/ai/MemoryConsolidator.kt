@@ -23,9 +23,13 @@ import me.rerere.common.android.Logging
 import me.rerere.rikkahub.data.ai.prompts.MemoryConsolidationConversation
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryConsolidationInput
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryConsolidationPrompt
+import me.rerere.rikkahub.data.ai.prompts.buildScopedMemoryConsolidationPrompt
 import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
-import me.rerere.rikkahub.data.ai.tools.createMemoryConversationTools
+import me.rerere.rikkahub.data.ai.tools.createScopedMemoryConversationTools
+import me.rerere.rikkahub.data.model.MemoryWriteContext
+import me.rerere.rikkahub.data.model.MemorySource
+import me.rerere.rikkahub.data.model.MemorySourceKind
 import me.rerere.rikkahub.data.ai.tools.dialogueMessages
 import me.rerere.rikkahub.data.ai.tools.memoryWritePath
 import me.rerere.rikkahub.data.datastore.Settings
@@ -49,8 +53,8 @@ private const val TAG = "MemoryConsolidator"
 private const val MAX_STEPS = 32
 private const val MAX_CONVERSATIONS_PER_RUN = 8
 
-// 找待整理的对话时最多读这么多个候选：每个都要把消息读出来，刚开启记忆时候选可能有几百个
-private const val MAX_SCANNED_CONVERSATIONS = 50
+// 候选 ID 分页读取，实际待整理数量在权限和轮次确认后再限制。
+private const val MEMORY_CANDIDATE_PAGE_SIZE = 50
 private const val MAX_TURNS_PER_CONVERSATION = 12
 private const val MAX_TRANSCRIPT_LENGTH = 60_000
 private const val RECENT_CONTEXT_MESSAGES = 6
@@ -78,57 +82,71 @@ class MemoryConsolidator(
 ) : MemoryConsolidationWorker {
 
     override suspend fun pendingOf(conversation: Conversation): PendingMemoryConversation? =
+        pendingAllOf(conversation).firstOrNull()
+
+    override suspend fun pendingAllOf(conversation: Conversation): List<PendingMemoryConversation> =
         withContext(Dispatchers.IO) {
-            val assistant = settingsStore.awaitLoaded().getAssistantById(conversation.assistantId)
-                ?.takeIf { it.enableMemory } ?: return@withContext null
-            val pending = loadPendingTurns(conversation)
-            if (pending.turns.isEmpty()) {
-                null
-            } else {
-                PendingMemoryConversation(
-                    conversationId = conversation.id,
-                    memoryId = assistant.memoryId,
-                    turns = pending.totalTurns,
-                    automatic = assistant.autoConsolidateMemory,
-                )
+            settingsStore.awaitLoaded().memoryTargets(conversation).mapNotNull { target ->
+                pendingFor(conversation, target)
             }
         }
 
-    override suspend fun memoryIdsWithUpdates(): List<String> = withContext(Dispatchers.IO) {
-        val assistants = settingsStore.awaitLoaded().assistants.filter { it.enableMemory }
-        if (assistants.isEmpty()) return@withContext emptyList()
-        val updated = consolidationDao.getAssistantIdsWithUpdatedConversations(
-            assistantIds = assistants.map { it.id.toString() },
-            since = System.currentTimeMillis() - PENDING_WINDOW_MS,
-        ).toSet()
-        assistants.filter { it.id.toString() in updated }.map { it.memoryId }.distinct()
+    private suspend fun pendingFor(conversation: Conversation, target: MemoryConsolidationTarget): PendingMemoryConversation? {
+        val pending = loadPendingTurns(conversation, target)
+        return if (pending.turns.isEmpty()) null else PendingMemoryConversation(
+            conversationId = conversation.id,
+            memoryId = target.memoryId,
+            turns = pending.totalTurns,
+            automatic = target.assistant.autoConsolidateMemory,
+        )
     }
 
-    override suspend fun findPending(memoryId: String): List<PendingMemoryConversation> =
-        withContext(Dispatchers.IO) {
-            val assistants = settingsStore.awaitLoaded().assistants
-                .filter { it.enableMemory && it.memoryId == memoryId }
-            // 开着和关了自动整理的助手分开找：混在一起截断的话，关了的助手的对话一直不整理、一直排在前面，
-            // 会把要自动整理的对话挤掉
-            assistants.partition { it.autoConsolidateMemory }.toList()
-                .filter { it.isNotEmpty() }
-                .flatMap { group -> findPendingOf(group.map { it.id.toString() }) }
-        }
+    override suspend fun memoryIdsWithUpdates(): List<String> = withContext(Dispatchers.IO) {
+        val settings = settingsStore.awaitLoaded()
+        val since = System.currentTimeMillis() - PENDING_WINDOW_MS
+        settings.assistants.filter { it.enableMemory }.flatMap { assistant ->
+            val groups = settings.memoryGroupsFor(assistant.id)
+            val candidates = collectMemoryCandidateIds(MEMORY_CANDIDATE_PAGE_SIZE) { limit, offset ->
+                consolidationDao.getUpdatedConversationIdsForAssistant(
+                    assistant.id.toString(), groups.mapNotNull { it.conversationId?.toString() },
+                    since, limit, offset,
+                )
+            }
+            candidates.flatMap { id ->
+                conversationRepo.getConversationById(Uuid.parse(id))?.let { conversation ->
+                    settings.memoryTargets(conversation).filter { it.assistant.id == assistant.id }.map { it.memoryId }
+                }.orEmpty()
+            }
+        }.distinct()
+    }
 
-    private suspend fun findPendingOf(assistantIds: List<String>): List<PendingMemoryConversation> {
-        val candidates = consolidationDao.getUpdatedConversationIds(
-            assistantIds = assistantIds,
-            since = System.currentTimeMillis() - PENDING_WINDOW_MS,
-            limit = MAX_SCANNED_CONVERSATIONS,
-        )
-        return collectPending(candidates, limit = MAX_CONVERSATIONS_PER_RUN) { id ->
-            conversationRepo.getConversationById(Uuid.parse(id))?.let { pendingOf(it) }
-        }
+    override suspend fun findPending(memoryId: String): List<PendingMemoryConversation> = withContext(Dispatchers.IO) {
+        val settings = settingsStore.awaitLoaded()
+        val since = System.currentTimeMillis() - PENDING_WINDOW_MS
+        settings.assistants.filter { it.enableMemory && (it.memoryId == memoryId || it.id.toString() == memoryId) }
+            .flatMap { assistant ->
+                val groups = settings.memoryGroupsFor(assistant.id)
+                val candidates = collectMemoryCandidateIds(MEMORY_CANDIDATE_PAGE_SIZE) { limit, offset ->
+                    consolidationDao.getUpdatedConversationIdsForAssistant(
+                        assistant.id.toString(), groups.mapNotNull { it.conversationId?.toString() },
+                        since, limit, offset,
+                    )
+                }
+                collectPending(candidates, MAX_CONVERSATIONS_PER_RUN) { id ->
+                    val conversation = conversationRepo.getConversationById(Uuid.parse(id)) ?: return@collectPending null
+                    val target = settings.memoryTargets(conversation).firstOrNull {
+                        it.assistant.id == assistant.id && it.memoryId == memoryId
+                    } ?: return@collectPending null
+                    pendingFor(conversation, target)
+                }
+            }.distinctBy { it.conversationId }
     }
 
     override suspend fun markConsolidated(conversation: Conversation) {
         withContext(Dispatchers.IO) {
-            advance(conversation.id, maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli()))
+            settingsStore.awaitLoaded().memoryTargets(conversation).forEach { target ->
+                advance(conversation.id, target.assistant.id, maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli()))
+            }
         }
     }
 
@@ -153,34 +171,121 @@ class MemoryConsolidator(
         fullReview: Boolean,
     ): MemoryConsolidationRun? {
         val settings = settingsStore.awaitLoaded()
-        val assistants = settings.assistants.filter { it.enableMemory && it.memoryId == memoryId }
-        if (assistants.isEmpty()) return null
-        val assistantIds = assistants.map { it.id }.toSet()
+        val assistants = settings.assistants.filter {
+            it.enableMemory && (it.memoryId == memoryId || it.id.toString() == memoryId)
+        }
+        var combined: MemoryConsolidationRun? = null
+        for ((assistant, review) in memoryConsolidationPasses(assistants, fullReview)) {
+            // 同一共享库只由最后一个独立目标做全库整理，不合并任何助手的私聊权限。
+            val pass = consolidateForAssistant(
+                settings,
+                assistant,
+                memoryId,
+                conversationIds,
+                review,
+            )
+            if (pass != null) combined = combined?.let { it + pass } ?: pass
+        }
+        return combined
+    }
 
-        val batches = conversationIds
-            .mapNotNull { conversationRepo.getConversationById(it) }
-            .filter { it.assistantId in assistantIds }
-            .sortedByDescending { it.updateAt }
-            .mapNotNull { conversation ->
-                val pending = loadPendingTurns(conversation)
-                if (pending.turns.isEmpty()) null else Batch(conversation, pending)
-            }
-            .withinTranscriptBudget()
-        val files = memoryRepository.getFiles(memoryId)
+    private suspend fun consolidateForAssistant(
+        settings: Settings,
+        assistant: Assistant,
+        memoryId: String,
+        conversationIds: Set<Uuid>,
+        fullReview: Boolean,
+    ): MemoryConsolidationRun? {
+        val batches = conversationIds.mapNotNull { conversationRepo.getConversationById(it) }
+            .sortedByDescending { it.updateAt }.mapNotNull { conversation ->
+                val target = settings.memoryTargets(conversation).firstOrNull {
+                    it.assistant.id == assistant.id && it.memoryId == memoryId
+                } ?: return@mapNotNull null
+                val pending = loadPendingTurns(conversation, target)
+                if (pending.turns.isEmpty()) null else Batch(conversation, pending, target)
+            }.withinTranscriptBudget()
+        val files = memoryRepository.getActiveFiles(memoryId)
         // 没有新的轮次时，只有手动清理且记忆库里有东西才值得调用模型
         if (batches.isEmpty() && (!fullReview || files.isEmpty())) return null
 
         val (model, reasoningLevel) = settings.consolidationModel(
             batches.firstOrNull()?.conversation,
-            assistants.first()
+            assistant
         )
             ?: error("No model available")
         val providerSetting = model.findProvider(settings.providers) ?: error("Provider not found")
-        // 自动整理只增改；删文件只在用户手动要求清理整个记忆库时才允许
-        val tools = buildMemoryTools(memoryRepository, memoryId)
-            .filter { fullReview || it.name != MemoryToolNames.DELETE } +
-            createMemoryConversationTools(conversationRepo, assistantIds)
-        val systemPrompt = buildMemoryConsolidationPrompt(fullReview)
+        val allowedGroups = if (memoryId == assistant.id.toString()) settings.memoryGroupsFor(assistant.id) else emptyList()
+        val shownSources = linkedMapOf<String, MemorySource>()
+        suspend fun recordShown(conversation: Conversation, messages: List<UIMessage>) {
+            val current = settingsStore.awaitLoaded()
+            val latest = conversationRepo.getConversationById(conversation.id)
+                ?: error("Source conversation was deleted")
+            val target = current.memoryTargets(latest).firstOrNull { it.assistant.id == assistant.id && it.memoryId == memoryId }
+                ?: error("Conversation is no longer authorized for this assistant")
+            check(latest.currentMessages == conversation.currentMessages && latest.config?.speakerMap == conversation.config?.speakerMap) {
+                "Source conversation changed before it was shown"
+            }
+            messages.forEach { message ->
+                // 他人/未知作者的发言可辅助理解，但不能成为目标角色新记忆的写入证据。
+                if (memorySpeakerRelation(conversation, message, assistant.id, target.group) in setOf("user", "self")) {
+                    memorySourceOf(conversation, message, target.group)?.let { source ->
+                        shownSources[memorySourceRef(conversation.id, message.id)] = source
+                    }
+                }
+            }
+        }
+        batches.forEach { recordShown(it.conversation, it.shownMessages) }
+        suspend fun checkAccess() {
+            val current = settingsStore.awaitLoaded()
+            val stored = current.getAssistantById(assistant.id)
+            check(stored?.enableMemory == true && (stored.memoryId == memoryId || stored.id.toString() == memoryId)) {
+                "Memory ownership changed during consolidation"
+            }
+            batches.forEach { batch ->
+                val latest = conversationRepo.getConversationById(batch.conversation.id)
+                    ?: error("Source conversation was deleted")
+                check(current.memoryTargets(latest).any {
+                    it.assistant.id == assistant.id && it.memoryId == memoryId && it.group?.id == batch.target.group?.id
+                }) { "Group membership or conversation ownership changed during consolidation" }
+            }
+        }
+        suspend fun contextFor(refs: List<String>): MemoryWriteContext {
+            checkAccess()
+            check(refs.isNotEmpty() || fullReview) { "source_refs is required for new memory facts" }
+            val current = settingsStore.awaitLoaded()
+            val sources = refs.map { ref ->
+                val original = shownSources[ref] ?: error("Source reference was not shown to this organizer")
+                val conversation = conversationRepo.getConversationById(Uuid.parse(requireNotNull(original.conversationId)))
+                    ?: error("Source conversation was deleted")
+                val target = current.memoryTargets(conversation).firstOrNull { it.assistant.id == assistant.id && it.memoryId == memoryId }
+                    ?: error("Source conversation is no longer authorized")
+                val message = conversation.currentMessages.firstOrNull { it.id.toString() == original.messageId }
+                    ?: error("Source message is no longer on the current branch")
+                check(memorySourceOf(conversation, message, target.group) == original) { "Source message changed during consolidation" }
+                original
+            }
+            // 引用由程序生成并复核；这是文件级证据引用，不是逐句事实验证或亲历认证。
+            return MemoryWriteContext(sources = sources.ifEmpty { listOf(MemorySource(MemorySourceKind.UNKNOWN)) })
+        }
+        // 自动整理只增改；一次 agent 只持有一个目标助手的私聊权限和明确群授权。
+        val tools = buildMemoryTools(
+            memoryRepository, memoryId, ::contextFor, ::checkAccess,
+            validateWrite = { path, candidate, refs ->
+                if (refs.isEmpty()) {
+                    check(fullReview) { "source_refs is required for new memory facts" }
+                    // 无聊天证据的手动整理仅能复用当前活跃记忆的完整行（含元数据）。
+                    // 不把旧记忆搬运冒充为当前聊天事实证明，也不允许凭空改写新事实。
+                    MemoryReviewGuard(memoryRepository.getActiveFiles(memoryId)).validateWrite(path, candidate)
+                }
+            },
+        ).filter { fullReview || it.name != MemoryToolNames.DELETE } +
+            createScopedMemoryConversationTools(
+                conversationRepo, assistant.id, allowedGroups,
+                settings.groupChats.mapNotNull { it.conversationId }.toSet(), ::recordShown,
+                allowPrivateChats = assistant.memoryId == memoryId,
+            )
+        val systemPrompt = buildMemoryConsolidationPrompt(fullReview) + "\n" +
+            buildScopedMemoryConsolidationPrompt(assistant.id, memoryId)
         // 整次整理的每一步用同一个会话 ID，服务端才能命中前面几步的缓存
         val params = backgroundTextGenerationParams(model, Uuid.random(), reasoningLevel)
         val hooks = object : AgentHooks {
@@ -214,20 +319,24 @@ class MemoryConsolidator(
             ),
             hooks = hooks,
         ).filterIsInstance<AgentEvent.Finished>().single()
-        if (finished.reason == AgentFinishReason.StepLimitReached) {
-            Logging.log(TAG, "consolidate $memoryId: stopped after $MAX_STEPS steps")
+        check(finished.reason != AgentFinishReason.StepLimitReached) {
+            "Memory consolidation stopped after $MAX_STEPS steps; progress was not advanced"
         }
-
-        // 生成中途失败会抛出，走不到这里：进度不推进，下次连同新的轮次一起重试
+        checkAccess()
+        // 生成中途失败或来源分支变化不推进；每个成员独立写自己的进度。
         val advanced = batches.filter { batch ->
-            batch.pending.consolidatedThrough?.let { advance(batch.conversation.id, it) } == true
+            val latest = conversationRepo.getConversationById(batch.conversation.id)
+            check(latest?.currentMessages == batch.conversation.currentMessages && latest.config?.speakerMap == batch.conversation.config?.speakerMap) {
+                "Source conversation changed; consolidation progress was not advanced"
+            }
+            batch.pending.consolidatedThrough?.let { advance(batch.conversation.id, assistant.id, it) } == true
         }
 
         val steps = finished.message.getTools()
         val touched = steps.mapNotNull { it.memoryWritePath() }
             .map { MemoryFile.normalizePath(it) ?: it }
             .distinct()
-        val remaining = memoryRepository.getFiles(memoryId).associateBy { it.path }
+        val remaining = memoryRepository.getActiveFiles(memoryId).associateBy { it.path }
         return MemoryConsolidationRun(
             memoryId = memoryId,
             finishedAt = System.currentTimeMillis(),
@@ -239,44 +348,49 @@ class MemoryConsolidator(
         )
     }
 
-    private suspend fun loadPendingTurns(conversation: Conversation): PendingMemoryTurns {
+    private suspend fun loadPendingTurns(conversation: Conversation, target: MemoryConsolidationTarget): PendingMemoryTurns {
         val messages = conversation.dialogueMessages()
-        val consolidatedAt = consolidationDao.getConsolidatedAt(conversation.id.toString())
-            // 第一次见到这个对话：定下从哪里开始整理并记下来，这之后的轮次一轮都不会被跳过
-            ?: initialMemoryProgress(messages).also { advance(conversation.id, it) }
+        val groupChat = target.group != null
+        val consolidatedAt = consolidationDao.getConsolidatedAt(conversation.id.toString(), target.assistant.id.toString())
+            ?: initialMemoryProgress(messages, groupChat = groupChat).also { advance(conversation.id, target.assistant.id, it) }
         val pending = pendingMemoryTurns(
             messages = messages,
             updatedAt = conversation.updateAt.toEpochMilli(),
             consolidatedAt = consolidatedAt,
+            groupChat = groupChat,
         )
-        // 没有新的轮次（比如只是重新生成了回复）也推进进度，免得每次扫描都把它读出来
-        if (pending.turns.isEmpty()) pending.consolidatedThrough?.let { advance(conversation.id, it) }
+        if (pending.turns.isEmpty()) pending.consolidatedThrough?.let { advance(conversation.id, target.assistant.id, it) }
         return pending
     }
 
     // 返回进度是否写进去了
-    private suspend fun advance(conversationId: Uuid, consolidatedAt: Long): Boolean = runCatching {
-        consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), consolidatedAt))
+    private suspend fun advance(conversationId: Uuid, assistantId: Uuid, consolidatedAt: Long): Boolean = runCatching {
+        consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), consolidatedAt, assistantId.toString()))
     }.onFailure {
         // 对话在整理期间被删掉时外键约束会拒绝写入
         Logging.log(TAG, "advance $conversationId: $it")
     }.isSuccess
 }
 
-private class Batch(val conversation: Conversation, val pending: PendingMemoryTurns) {
+private class Batch(val conversation: Conversation, val pending: PendingMemoryTurns, val target: MemoryConsolidationTarget) {
+    private val recent = conversation.dialogueMessages().withIndex()
+        .filterNot { it.value.isContextCheckpoint || it.value.isSynthetic }
+        .filter { it.index < pending.turns.first().position }.takeLast(RECENT_CONTEXT_MESSAGES)
+    val shownMessages: List<UIMessage> = (recent + pending.turns.flatMap { it.messages })
+        .map { it.value }.filter { it.toText().isNotBlank() }.distinctBy { it.id }
     val input: MemoryConsolidationConversation by lazy {
-        val messages = conversation.dialogueMessages().withIndex().filterNot { it.value.isContextCheckpoint }
-        val firstPosition = pending.turns.first().position
         MemoryConsolidationConversation(
             id = conversation.id.toString(),
             title = conversation.title,
-            recentContext = messages
-                .filter { it.index < firstPosition }
-                .takeLast(RECENT_CONTEXT_MESSAGES)
-                .toMemoryTranscript(RECENT_CONTEXT_MESSAGE_LENGTH, RECENT_CONTEXT_MESSAGE_LENGTH),
-            newTurns = pending.turns
-                .flatMap { it.messages }
-                .toMemoryTranscript(USER_MESSAGE_LENGTH, ASSISTANT_MESSAGE_LENGTH),
+            recentContext = recent.toScopedMemoryTranscript(
+                conversation, target, RECENT_CONTEXT_MESSAGE_LENGTH, RECENT_CONTEXT_MESSAGE_LENGTH,
+            ),
+            newTurns = pending.turns.flatMap { it.messages }.toScopedMemoryTranscript(
+                conversation, target, USER_MESSAGE_LENGTH, ASSISTANT_MESSAGE_LENGTH,
+            ),
+            sourceKind = if (target.group == null) "PRIVATE_CHAT" else "GROUP_CHAT",
+            groupId = target.group?.id?.toString(),
+            targetAssistantId = target.assistant.id.toString(),
         )
     }
 }
@@ -302,6 +416,21 @@ private fun Settings.consolidationModel(
             ?.let { it to fastModelReasoningLevel }
         ?: return null
     return model.copy(tools = emptySet()) to reasoningLevel
+}
+
+/** 先固定全部候选 ID；后续轮次检查会推进进度，边检查边 OFFSET 会因候选退出查询而漏项。 */
+internal suspend fun collectMemoryCandidateIds(
+    pageSize: Int,
+    loadPage: suspend (limit: Int, offset: Int) -> List<String>,
+): List<String> {
+    val candidates = mutableListOf<String>()
+    var offset = 0
+    while (true) {
+        val page = loadPage(pageSize, offset)
+        candidates.addAll(page)
+        if (page.size < pageSize) return candidates
+        offset += page.size
+    }
 }
 
 /**
@@ -345,9 +474,13 @@ internal class PendingMemoryTurns(
 )
 
 // 按用户消息切成轮；压缩检查点是模型写的摘要，不是用户说的话
-private fun memoryTurnsOf(messages: List<UIMessage>): List<MemoryTurn> {
-    val indexed = messages.withIndex().filterNot { it.value.isContextCheckpoint }
-    val starts = indexed.indices.filter { indexed[it].value.role == MessageRole.USER }
+private fun memoryTurnsOf(messages: List<UIMessage>, groupChat: Boolean = false): List<MemoryTurn> {
+    val indexed = messages.withIndex().filterNot { it.value.isContextCheckpoint || it.value.isSynthetic }
+    // 群连续接话没有新的 USER；每个完整发言也是新单元，不能跟着早已整理的用户轮次一起跳过。
+    val starts = indexed.indices.filter {
+        indexed[it].value.role == MessageRole.USER || (groupChat && indexed[it].value.role == MessageRole.ASSISTANT &&
+            (it == 0 || indexed[it - 1].value.role != MessageRole.USER))
+    }
     return starts.mapIndexed { i, start ->
         MemoryTurn(indexed.subList(start, starts.getOrElse(i + 1) { indexed.size }))
     }
@@ -365,8 +498,9 @@ private val MemoryTurn.hasUserText: Boolean get() = userMessage.toText().isNotBl
 internal fun initialMemoryProgress(
     messages: List<UIMessage>,
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    groupChat: Boolean = false,
 ): Long {
-    val first = memoryTurnsOf(messages).filter { it.hasUserText }.takeLast(MAX_TURNS_PER_CONVERSATION).firstOrNull()
+    val first = memoryTurnsOf(messages, groupChat).filter { it.hasUserText }.takeLast(MAX_TURNS_PER_CONVERSATION).firstOrNull()
         ?: return 0
     return first.userMessage.createdAt.toInstant(timeZone).toEpochMilliseconds() - 1
 }
@@ -382,21 +516,28 @@ internal fun pendingMemoryTurns(
     updatedAt: Long,
     consolidatedAt: Long,
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    groupChat: Boolean = false,
 ): PendingMemoryTurns {
     fun UIMessage.time() = createdAt.toInstant(timeZone).toEpochMilliseconds()
 
-    val turns = memoryTurnsOf(messages)
+    val turns = memoryTurnsOf(messages, groupChat)
     var pending = turns.filter { it.userMessage.time() > consolidatedAt }
     var consolidatedThrough = maxOf(updatedAt, turns.lastOrNull()?.messages?.last()?.value?.time() ?: 0)
     val last = turns.lastOrNull()
     if (last != null && !last.isFinished) {
         // 最后一轮还没结束：留到下次，进度停在它前面
-        pending = pending.filter { it !== last }
+        // 同一时间戳必须一起完成后再推进，否则先完成的发言会把未完成的同刻发言跨过去。
+        pending = pending.filter { it !== last && it.userMessage.time() < last.userMessage.time() }
         consolidatedThrough = last.userMessage.time() - 1
     }
 
     pending = pending.filter { it.hasUserText }
-    val batch = pending.take(MAX_TURNS_PER_CONVERSATION)
+    var batchSize = minOf(MAX_TURNS_PER_CONVERSATION, pending.size)
+    // 时间戳进度无法区分同一时间的轮次，切点处必须一起交给模型，避免尾部被永久跳过。
+    while (batchSize < pending.size && pending[batchSize].userMessage.time() == pending[batchSize - 1].userMessage.time()) {
+        batchSize++
+    }
+    val batch = pending.take(batchSize)
     if (batch.isNotEmpty()) {
         val batchEnd = batch.last().userMessage.time()
         // 积压超过一次能处理的量（比如模型连续失败）时从最早的开始，进度只推进到这一批为止，

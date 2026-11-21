@@ -58,7 +58,7 @@ class WebDavSync(
         val resources = client.list().getOrThrow()
 
         resources
-            .filter { !it.isCollection && it.displayName.startsWith("backup_") && it.displayName.endsWith(".zip") }
+            .filter { !it.isCollection && BackupManager.isBackupFileName(it.displayName) }
             .map { resource ->
                 WebDavBackupItem(
                     href = resource.href,

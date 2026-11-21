@@ -17,6 +17,7 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.backgroundTextGenerationParams
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -38,6 +39,7 @@ class GroupChatService(
     private val conversationRepo: ConversationRepository,
     private val chatService: ChatService,
     private val providerManager: ProviderManager,
+    private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
 ) {
     private val tasks = ConcurrentHashMap<Uuid, GroupChatTask>()
     private val deleting = ConcurrentHashMap.newKeySet<Uuid>()
@@ -125,6 +127,7 @@ class GroupChatService(
         val config = group.resolved(settingsStore.settingsFlow.value.groupChatDefaults)
         val manualId = if (config.activationStrategy == GroupActivationStrategy.MANUAL) awaitManualSpeaker() else null
         var completed = true
+        var generated = false
         runRounds(
             rounds = config.autoChatRounds,
             delayMillis = config.autoModeDelay * 1000L,
@@ -148,13 +151,24 @@ class GroupChatService(
             },
             isEnabled = { id -> members(groupId).any { it.id == id } },
             generate = { id ->
-                (currentGroup(groupId)?.conversationId == convId &&
-                    chatService.generateForSpeaker(convId, id, runPostTurnTasks = false)).also {
-                    if (!it) completed = false
-                }
+                val succeeded = currentGroup(groupId)?.conversationId == convId &&
+                    chatService.generateForSpeaker(convId, id, runPostTurnTasks = false)
+                // generateForSpeaker 也会把达到工具步数上限算作成功，末条仍有工具时不算完整回复。
+                val finished = succeeded && chatService.getConversation(convId)?.currentMessages
+                    ?.lastOrNull()?.let { message ->
+                        message.role == MessageRole.ASSISTANT &&
+                            message.parts.lastOrNull { it !is UIMessagePart.Reasoning } !is UIMessagePart.Tool
+                    } == true
+                if (finished) generated = true else completed = false
+                succeeded
             },
         )
-        if (completed) maybeSummarize(groupId, convId)
+        currentCoroutineContext().ensureActive()
+        if (completed && generated && currentGroup(groupId)?.conversationId == convId) {
+            // 所有发言完成后只调度一次，避免按成员生成时整理到半轮群聊。
+            chatService.getConversation(convId)?.let(memoryConsolidationScheduler::onTurnFinished)
+            maybeSummarize(groupId, convId)
+        }
     }
 
     fun chooseManualSpeaker(groupId: Uuid, id: Uuid?) {

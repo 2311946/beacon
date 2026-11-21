@@ -65,9 +65,32 @@ class MemoryPromptTest {
         assertEquals("- [stated] Name is Lin", input.block("profile"))
         assertTrue(input.block("memory_listing").startsWith("/topics/food.md"))
         // 标题里的引号和尖括号不能破坏标签
-        assertTrue(input.contains("<conversation id=\"c1\" title=\"Moving  to   Hangzhou\">"))
+        assertTrue(input.contains("<conversation id=\"c1\" title=\"Moving  to   Hangzhou\" source_kind=\"PRIVATE_CHAT\" group_id=\"\" target_assistant_id=\"\">"))
         assertEquals("(none)", input.block("recent_context"))
         assertEquals("[USER #4]: I moved to Hangzhou", input.block("new_turns"))
+    }
+
+    @Test
+    fun `group input identifies target and origin without changing transcript authors`() {
+        val input = buildMemoryConsolidationInput(
+            files = emptyList(),
+            conversations = listOf(MemoryConsolidationConversation(
+                id = "group-conversation",
+                title = "群讨论",
+                recentContext = "[ASSISTANT relation=other]: other context",
+                newTurns = "[ASSISTANT relation=self source_ref=c/m]: target account",
+                sourceKind = "GROUP_CHAT",
+                groupId = "group-id",
+                targetAssistantId = "target-id",
+            )),
+        )
+        assertTrue(input.contains("source_kind=\"GROUP_CHAT\" group_id=\"group-id\" target_assistant_id=\"target-id\""))
+        assertEquals("[ASSISTANT relation=self source_ref=c/m]: target account", input.block("new_turns"))
+        assertEquals("[ASSISTANT relation=other]: other context", input.block("recent_context"))
+        val prompt = buildMemoryConsolidationPrompt(fullReview = false)
+        assertTrue(prompt.contains("sole exception"))
+        assertTrue(prompt.contains("[role-experience]"))
+        assertTrue(prompt.contains("not independently verified real-world facts"))
     }
 
     @Test
@@ -81,6 +104,10 @@ class MemoryPromptTest {
     @Test
     fun `whole-store tidying is only asked for in a full review`() {
         assertFalse(buildMemoryConsolidationPrompt(fullReview = false).contains("## Full review"))
-        assertTrue(buildMemoryConsolidationPrompt(fullReview = true).contains("## Full review"))
+        val prompt = buildMemoryConsolidationPrompt(fullReview = true)
+        assertTrue(prompt.contains("## Full review"))
+        assertTrue(prompt.contains("Remove exact duplicate complete lines"))
+        assertTrue(prompt.contains("successfully write the destination before removing them from the source"))
+        assertFalse(prompt.contains("- Merge lines that say the same thing"))
     }
 }
