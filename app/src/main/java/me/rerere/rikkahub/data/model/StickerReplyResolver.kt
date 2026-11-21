@@ -19,17 +19,44 @@ object StickerReplyResolver {
     private val standaloneUrl = Regex("(?m)^[ \\t]*((?:https?|file)://[^\\s<>]+)[ \\t]*$", RegexOption.IGNORE_CASE)
     private val imageExtension = Regex("\\.(png|jpe?g|gif|webp|bmp|avif|svg)$", RegexOption.IGNORE_CASE)
     private val nonWord = Regex("[^\\p{L}\\p{N}]+")
+    private val namedSticker = Regex(
+        """\[表情包:([^\[\]\r\n]{1,80})\][ \t]+((?:https?|file)://[^\s<>]+)""",
+        RegexOption.IGNORE_CASE,
+    )
 
-    fun resolve(text: String, groups: List<StickerGroup>, streaming: Boolean = false): String {
+    /** 用户持久化正文保留名称和URL，只在显示时转为图片；不按名称猜另一张图。 */
+    fun renderNamedStickers(text: String, streaming: Boolean = false): String {
+        val protected = protectedPositions(text, streaming)
+        return namedSticker.replace(text) { match ->
+            // 只以标记开头的位置判断是否处于代码/链接保护区；名称本身可包含反引号等自然语言字符。
+            if (isEscaped(text, match.range.first) || protected[match.range.first] ||
+                (streaming && match.range.last == text.lastIndex)) return@replace match.value
+            val url = match.groupValues[2]
+            val valid = runCatching {
+                val uri = URI(url)
+                if (uri.scheme.equals("file", true)) uri.authority.isNullOrEmpty() &&
+                    uri.path?.startsWith("/") == true && uri.query == null && uri.fragment == null
+                else !uri.host.isNullOrBlank() && uri.rawUserInfo == null && (uri.port == -1 || uri.port in 1..65535)
+            }.getOrDefault(false)
+            if (valid) imageMarkdown(url) else match.value
+        }
+    }
+
+    fun resolve(text: String, groups: List<StickerGroup>, streaming: Boolean = false): String =
+        resolveLegacy(renderNamedStickers(text, streaming), groups, streaming)
+
+    private fun resolveLegacy(text: String, groups: List<StickerGroup>, streaming: Boolean): String {
         val knownUrls = groups.flatMap { it.stickers }.map { it.url }.toSet()
         // 先收集原文上的替换，避免把新生成的 Markdown 再次当作输入解析。
         val protected = protectedPositions(text, streaming)
         fun isProtected(range: IntRange) = range.any { protected[it] }
         val replacements = mutableListOf<Pair<IntRange, String>>()
         val urls = standaloneUrl.findAll(text).toList()
+        val namedRanges = namedSticker.findAll(text).map { it.range }.toList()
         marker.findAll(text).forEach { match ->
             val bracketsMatch = (match.groupValues[1] == "[") == (match.groupValues[3] == "]")
-            if (bracketsMatch && !isEscaped(text, match.range.first) && !isProtected(match.range) &&
+            if (bracketsMatch && namedRanges.none { match.range.first in it } &&
+                !isEscaped(text, match.range.first) && !isProtected(match.range) &&
                 urls.none { match.range.first <= it.range.last && match.range.last >= it.range.first }
             ) {
                 matchSticker(match.groupValues[2], groups)?.let { url ->
@@ -97,12 +124,32 @@ object StickerReplyResolver {
 
     /** 请求层只读提取本地图片引用；调用方还必须校验路径位于应用私有表情目录。 */
     fun localImageUrls(text: String): List<String> {
-        val protected = protectedPositions(text, streaming = false, protectImages = false)
-        return markdownImage.findAll(text).mapNotNull { match ->
-            if (protected[match.range.first] || isEscaped(text, match.range.first)) return@mapNotNull null
+        val display = renderNamedStickers(text)
+        val protected = protectedPositions(display, streaming = false, protectImages = false)
+        return markdownImage.findAll(display).mapNotNull { match ->
+            if (protected[match.range.first] || isEscaped(display, match.range.first)) return@mapNotNull null
             val url = (match.groups[1] ?: match.groups[2])?.value ?: return@mapNotNull null
             url.takeIf { it.startsWith("file://") }
         }.distinct().toList()
+    }
+
+    data class LocalImageDisplay(val content: String, val urls: Map<String, String>)
+
+    /** 仅给获准的本地表情分配临时显示地址，在图片插槽恢复；不关闭解析器的安全协议过滤。 */
+    fun prepareLocalImagesForDisplay(text: String, isAllowed: (String) -> Boolean): LocalImageDisplay {
+        val protected = protectedPositions(text, streaming = false, protectImages = false)
+        val urls = linkedMapOf<String, String>()
+        val content = markdownImage.replace(text) { match ->
+            if (protected[match.range.first] || isEscaped(text, match.range.first)) return@replace match.value
+            val destination = match.groups[1] ?: match.groups[2] ?: return@replace match.value
+            val url = destination.value
+            if (!url.startsWith("file://") || !isAllowed(url)) return@replace match.value
+            val placeholder = "/beacon-sticker-${java.util.UUID.randomUUID()}"
+            urls[placeholder] = url
+            val offset = destination.range.first - match.range.first
+            match.value.replaceRange(offset, offset + url.length, placeholder)
+        }
+        return LocalImageDisplay(content, urls)
     }
 
     /** BetterText v0.1.3 drops angle-bracket image destinations; normalize display only. */
@@ -277,7 +324,7 @@ object StickerReplyResolver {
         val ranked = groups.flatMap { group ->
             group.stickers.map { sticker ->
                 val score = if (description.trim() == sticker.url) 120
-                else maxOf(relevance(query, filename(sticker.url)), relevance(query, group.name))
+                else maxOf(relevance(query, sticker.name), relevance(query, filename(sticker.url)), relevance(query, group.name))
                 sticker.url to score
             }
         }.groupBy({ it.first }, { it.second }).map { (url, scores) -> url to scores.max() }
@@ -295,7 +342,7 @@ object StickerReplyResolver {
         catalog@ for (group in groups) {
             for (sticker in group.stickers) {
                 if (entries.size >= 60) break@catalog
-                val entry = "{\"group\":${JsonPrimitive(group.name.take(80))},\"filename\":${JsonPrimitive(filename(sticker.url).take(80))},\"url\":${JsonPrimitive(sticker.url)}}"
+                val entry = "{\"group\":${JsonPrimitive(group.name.take(80))},\"name\":${JsonPrimitive(sticker.name.take(80))},\"filename\":${JsonPrimitive(filename(sticker.url).take(80))},\"url\":${JsonPrimitive(sticker.url)}}"
                 val size = entry.length + if (entries.isEmpty()) 0 else 1
                 if (chars + size > 11_000) continue
                 entries += entry
@@ -312,7 +359,7 @@ object StickerReplyResolver {
             发送方式二（文字+表情混排）：在同一条回复的任意文字之间插入[图片: 完整URL]，标记前后可以继续写文字，也可插入多个标记；不需要拆成多条消息。界面按原顺序显示文字和图片。
             也支持[图片: 文件名或分组名]，但仅能明确匹配目录资源时使用；优先用完整URL避免重名。匹配不到的描述会原样显示，不要编造图片描述。
             不要编造或改写 URL，不要用反引号或代码块包裹标记或 URL；普通行内裸 URL 不会自动转成图片，请使用图片标记。
-            目录只提供分组和文件名，不代表你看过图片；可依据分组表达的大致用途选择，不要声称识别了图片细节。不合适时正常文字回复即可；工具调用、摘要和结构化任务不要插入表情。
+            目录提供用户填写的单张名称、分组和文件名；名称可帮助理解表情含义，但不代表你看过图片。空名称表示未命名，不要根据编号猜测含义或声称识别了图片细节。不合适时正常文字回复即可；工具调用、摘要和结构化任务不要插入表情。
             以下是本轮可用的部分或全部表情：
         """.trimIndent() + "\n" + entries.joinToString("\n") +
             "\n发送格式示例（URL 来自本轮目录，仅演示格式，不要求固定使用这一张）：" +

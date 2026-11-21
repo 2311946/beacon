@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -47,11 +48,40 @@ class BackupManager(
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.awaitLoaded()
+            val stickersJson = if (includeFiles && BackupFormat.hasStickerData(context)) {
+                BackupFormat.captureStickers(context, json)
+            } else null
+            val preferences = BackupFormat.capturePreferences(context)
+            BackupFormat.validatePreferences(preferences, json)
             ZipOutputStream(FileOutputStream(archive)).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
+
+                val manifest = BackupManifest(
+                    components = BackupManifestComponents(
+                        database = includeDatabase,
+                        stickers = stickersJson != null,
+                        files = includeFiles,
+                    ),
+                    databaseUserVersion = if (includeDatabase) {
+                        database.openHelper.readableDatabase.version
+                    } else null,
+                )
+                zip.putNextEntry(ZipEntry(BACKUP_MANIFEST))
+                zip.write(json.encodeToString(manifest).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+
+                zip.putNextEntry(ZipEntry(PREFERENCES_JSON))
+                zip.write(json.encodeToString(preferences).toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+
+                if (stickersJson != null) {
+                    zip.putNextEntry(ZipEntry(STICKERS_JSON))
+                    zip.write(stickersJson.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
                 if (includeDatabase) {
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
                     DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, snapshot)
@@ -60,8 +90,16 @@ class BackupManager(
                 if (includeFiles) {
                     for (folder in ATTACHMENT_FOLDERS) {
                         val directory = File(context.filesDir, folder)
-                        val files = if (folder in NESTED_ATTACHMENT_FOLDERS) directory.walkTopDown().asSequence()
-                        else directory.listFiles().orEmpty().asSequence()
+                        if (folder == FileFolders.WORKSPACES) {
+                            zip.putNextEntry(ZipEntry(WorkspaceBackup.ARCHIVE_METADATA))
+                            zip.write(WorkspaceBackup.capture(directory, json).toByteArray(Charsets.UTF_8))
+                            zip.closeEntry()
+                        }
+                        val files = when {
+                            folder == FileFolders.WORKSPACES -> WorkspaceBackup.regularFiles(directory).asSequence()
+                            folder in NESTED_ATTACHMENT_FOLDERS -> directory.walkTopDown().asSequence()
+                            else -> directory.listFiles().orEmpty().asSequence()
+                        }
                         for (file in files.filter { it.isFile }) {
                             currentCoroutineContext().ensureActive()
                             // A media result still being downloaded is incomplete and gets renamed when it finishes.
@@ -99,8 +137,15 @@ class BackupManager(
                         for (entry in zip.entries()) {
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
+                            require(seen.add(entry.name)) { "Duplicate backup entry: ${entry.name}" }
                             val target = when (entry.name) {
                                 "settings.json" -> File(staging, "settings.json")
+                                BACKUP_MANIFEST -> File(staging, BACKUP_MANIFEST)
+                                WorkspaceBackup.ARCHIVE_METADATA -> if (includeFiles) {
+                                    File(staging, WorkspaceBackup.ARCHIVE_METADATA)
+                                } else null
+                                PREFERENCES_JSON -> File(staging, PREFERENCES_JSON)
+                                STICKERS_JSON -> if (includeFiles) File(staging, STICKERS_JSON) else null
                                 DatabaseBackup.ARCHIVE_DATABASE -> if (includeDatabase) stagedDatabase else null
                                 DatabaseBackup.WAL -> if (includeDatabase) stagedWal else null
                                 DatabaseBackup.SHM -> null // Rebuilt by SQLite; never restore shared-memory state.
@@ -108,7 +153,6 @@ class BackupManager(
                                     PendingRestore.resolveInside(File(payload, "files"), entry.name)
                                 } else null
                             } ?: continue
-                            require(seen.add(entry.name)) { "Duplicate backup entry: ${entry.name}" }
                             check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) {
                                 "Cannot create backup staging directory"
                             }
@@ -135,6 +179,46 @@ class BackupManager(
                         DatabaseBackup.removeSidecars(stagedDatabase)
                     }
 
+                    val manifestFile = File(staging, BACKUP_MANIFEST)
+                    if (manifestFile.exists()) {
+                        val manifest = json.decodeFromString<BackupManifest>(manifestFile.readText())
+                        require(manifest.formatVersion == BackupManifest.FORMAT_VERSION) {
+                            "Unsupported backup format version: ${manifest.formatVersion}"
+                        }
+                        require(manifest.components.settings == ("settings.json" in seen)) {
+                            "Backup manifest settings component does not match archive"
+                        }
+                        require(manifest.components.database == (DatabaseBackup.ARCHIVE_DATABASE in seen)) {
+                            "Backup manifest database component does not match archive"
+                        }
+                        require(manifest.components.preferences == (PREFERENCES_JSON in seen)) {
+                            "Backup manifest preferences component does not match archive"
+                        }
+                        require(manifest.components.stickers == (STICKERS_JSON in seen)) {
+                            "Backup manifest stickers component does not match archive"
+                        }
+                        require(manifest.components.files || seen.none { name ->
+                            name == WorkspaceBackup.ARCHIVE_METADATA ||
+                                ATTACHMENT_FOLDERS.any { name.startsWith("$it/") }
+                        }) { "Backup manifest excludes files but archive contains attachments" }
+                        require(!manifest.components.stickers || manifest.components.files) {
+                            "Sticker configuration requires file component"
+                        }
+                    }
+                    val preferencesFile = File(staging, PREFERENCES_JSON)
+                    if (preferencesFile.exists()) {
+                        BackupFormat.validatePreferences(
+                            json.decodeFromString<BackupPreferences>(preferencesFile.readText()), json,
+                        )
+                    }
+                    val stickersFile = File(staging, STICKERS_JSON)
+                    if (stickersFile.exists()) {
+                        BackupFormat.validateStickersJson(
+                            File(payload, "files/${FileFolders.STICKERS}"),
+                            json,
+                            stickersFile.readText(),
+                        )
+                    }
                     val settingsFile = File(staging, "settings.json")
                     if (settingsFile.exists()) {
                         val migrated = SettingsJsonMigrator.migrate(settingsFile.readText())
@@ -143,10 +227,16 @@ class BackupManager(
                         // Persist the migrated value once, including generated IDs, for restart/retry consistency.
                         PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))
                     }
+                    val workspaceMetadata = File(staging, WorkspaceBackup.ARCHIVE_METADATA)
+                    if (workspaceMetadata.isFile) {
+                        WorkspaceBackup.restoreMetadata(
+                            File(payload, "files/${FileFolders.WORKSPACES}"), json, workspaceMetadata.readText(),
+                        )
+                    }
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)
                 } finally {
-                    staging.deleteRecursively()
+                    PendingRestore.discardStaging(staging)
                 }
             }
         }
@@ -167,11 +257,26 @@ class BackupManager(
     }
 
     companion object {
-        private val ATTACHMENT_FOLDERS =
-            listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION)
+        private val ATTACHMENT_FOLDERS = listOf(
+            FileFolders.UPLOAD,
+            FileFolders.SKILLS,
+            FileFolders.FONTS,
+            FileFolders.MEDIA_CREATION,
+            FileFolders.STICKERS,
+            FileFolders.IMAGES,
+            FileFolders.WORKSPACES,
+        )
 
         /** Backed up with their subdirectories; the other folders only contain top-level files. */
-        private val NESTED_ATTACHMENT_FOLDERS = setOf(FileFolders.SKILLS, FileFolders.MEDIA_CREATION)
+        private val NESTED_ATTACHMENT_FOLDERS = setOf(
+            FileFolders.SKILLS,
+            FileFolders.MEDIA_CREATION,
+            FileFolders.WORKSPACES,
+        )
+
+        private const val BACKUP_MANIFEST = "backup_manifest.json"
+        private const val PREFERENCES_JSON = "preferences.json"
+        private const val STICKERS_JSON = "stickers.json"
 
         // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
         private const val LAUNCH_COUNT_KEY = "launchCount"
@@ -193,13 +298,52 @@ class BackupManager(
 
         /** Must finish before Koin, Room, SettingsStore or any background consumers are initialized. */
         suspend fun applyPendingRestore(context: Context, json: Json): Boolean = withContext(Dispatchers.IO) {
-            pendingRestore(context).apply { settingsJson ->
-                SettingsStore.restoreBeforeInitialization(
-                    context = context,
-                    settings = json.decodeFromString<Settings>(settingsJson),
-                    launchCount = json.launchCountOf(settingsJson),
-                )
-            }
+            pendingRestore(context).apply(
+                preparePreferences = { pending ->
+                    if (File(pending, "settings.json").isFile) {
+                        val original = File(pending, "settings-original.json")
+                        if (!original.exists()) {
+                            val (settings, launchCount) = SettingsStore.captureBeforeInitialization(context)
+                            PendingRestore.writeDurably(original, json.encodeSettings(settings, launchCount))
+                        } else {
+                            json.decodeFromString<Settings>(original.readText())
+                        }
+                    }
+                    BackupFormat.preparePreferenceRollback(context, pending, json)
+                },
+                rollbackPreferences = { pending ->
+                    BackupFormat.rollbackPreferences(context, pending, json)
+                    val original = File(pending, "settings-original.json")
+                    if (original.isFile) {
+                        val text = original.readText()
+                        SettingsStore.restoreBeforeInitialization(
+                            context, json.decodeFromString<Settings>(text), json.launchCountOf(text),
+                        )
+                    }
+                },
+                restoreSettings = { settingsJson ->
+                    SettingsStore.restoreBeforeInitialization(
+                        context = context,
+                        settings = json.decodeFromString<Settings>(settingsJson),
+                        launchCount = json.launchCountOf(settingsJson),
+                    )
+                },
+                restorePreferences = { preferencesJson ->
+                    BackupFormat.restorePreferences(
+                        context = context,
+                        value = json.decodeFromString<BackupPreferences>(preferencesJson),
+                        json = json,
+                    )
+                },
+                restoreStickers = { stickersJson ->
+                    BackupFormat.restoreStickers(
+                        context = context,
+                        stickerDirectory = File(context.filesDir, FileFolders.STICKERS),
+                        json = json,
+                        text = stickersJson,
+                    )
+                },
+            )
         }
     }
 }

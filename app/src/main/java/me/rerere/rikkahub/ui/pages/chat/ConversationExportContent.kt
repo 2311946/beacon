@@ -99,7 +99,9 @@ private fun StringBuilder.appendExportParts(
     parts.forEach { part ->
         when (part) {
             is UIMessagePart.Text -> {
-                if (toolOutput) appendExportCode(part.text, "text") else appendLine(part.text)
+                if (toolOutput) appendExportCode(part.text, "text") else appendLine(
+                    me.rerere.rikkahub.data.model.StickerReplyResolver.renderNamedStickers(part.text)
+                )
             }
             is UIMessagePart.Reasoning -> if (includeReasoning) {
                 part.reasoning.lines().forEach { appendLine("> $it") }

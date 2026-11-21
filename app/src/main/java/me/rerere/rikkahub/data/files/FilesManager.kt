@@ -521,6 +521,9 @@ object FileFolders {
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
     const val MEDIA_CREATION = "media_creation"
+    const val STICKERS = "stickers"
+    const val IMAGES = "images"
+    const val WORKSPACES = "workspaces"
 }
 
 suspend fun FilesManager.saveUploadFromUri(

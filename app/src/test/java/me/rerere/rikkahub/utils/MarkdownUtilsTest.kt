@@ -158,6 +158,52 @@ class MarkdownUtilsTest {
     }
 
     @Test
+    fun `paragraph bubbles retain dialogue action thought and narration styles`() {
+        val source = "旁白走进房间。\n\n「你好呀」\n\n*轻轻点头*\n\n（其实有些紧张）"
+        val paragraphs = me.rerere.rikkahub.ui.components.message.splitMarkdownParagraphs(source)
+        assertEquals(4, paragraphs.size)
+        val styled = paragraphs.map { paragraph ->
+            applyNovelTextStyles(parseMarkdown(paragraph, softBreakAsLineBreak = true, streaming = false), novelStyles)
+        }
+        assertEquals(paragraphs, styled.map { it.source })
+        val expectedColors = listOf(Color.DarkGray, Color.Magenta, Color.Gray, Color.LightGray)
+        styled.forEachIndexed { index, document ->
+            val rendered = runs(paragraphInlines(document.blocks))
+            assertTrue("Missing text in paragraph $index", rendered.isNotEmpty())
+            assertTrue("Lost novel style in paragraph $index", rendered.all { it.second.color == expectedColors[index] })
+        }
+        assertTrue(runs(paragraphInlines(styled[1].blocks)).all { it.second.fontWeight == FontWeight.Bold })
+        assertTrue(runs(paragraphInlines(styled[2].blocks)).all { it.second.fontStyle == FontStyle.Italic })
+        val thought = styled[3].blocks.single() as MarkdownBlock.Paragraph
+        assertEquals(androidx.compose.ui.text.style.TextIndent(1.5.em, 1.5.em), thought.style?.textIndent)
+    }
+
+    @Test
+    fun `paragraph splitting preserves full details before novel rendering`() {
+        val source = "前文\n\n<details>\n<summary>生图描述</summary>\n\n「人物」（神态）\n\n</details>\n\n后文"
+        val paragraphs = me.rerere.rikkahub.ui.components.message.splitMarkdownParagraphs(source)
+        assertEquals(listOf(source), paragraphs)
+        val document = parseMarkdown(paragraphs.single(), softBreakAsLineBreak = true, streaming = false)
+        val styled = applyNovelTextStyles(document, novelStyles)
+        assertEquals(source, styled.source)
+        assertEquals(1, styled.blocks.filterIsInstance<MarkdownBlock.Details>().size)
+    }
+
+    @Test
+    fun `image descriptions remain complete through the display folding pipeline`() {
+        listOf(false, true).forEach { streaming ->
+            val source = "「画给你看」\n\n[生成图片：窗边的人物（微笑），柔和光线${if (streaming) "" else "]"}"
+            val display = me.rerere.rikkahub.data.ai.foldChatImageDescriptions(source, streaming)
+            assertTrue(display.contains("<details>"))
+            assertEquals(listOf(display), me.rerere.rikkahub.ui.components.message.splitMarkdownParagraphs(display))
+            val parsed = parseMarkdown(display, softBreakAsLineBreak = true, streaming = streaming)
+            val styled = applyNovelTextStyles(parsed, novelStyles)
+            assertEquals(display, styled.source)
+            assertEquals(1, styled.blocks.filterIsInstance<MarkdownBlock.Details>().size)
+        }
+    }
+
+    @Test
     fun `strip html tags but keep text`() {
         assertEquals("标题\n内容", "<details>\n<summary>标题</summary>\n\n内容\n\n</details>".stripMarkdown())
     }

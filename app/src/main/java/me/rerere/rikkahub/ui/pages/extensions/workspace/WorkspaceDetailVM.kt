@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.model.WorkspaceStorageMount
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
@@ -285,6 +286,26 @@ class WorkspaceDetailVM(
         }
     }
 
+    fun setStorageMounts(mounts: List<WorkspaceStorageMount>) {
+        // 在 launch 前占用保存槽，同一帧的第二次点击也不能提交旧列表。
+        val previous = _state.getAndUpdate { it.copy(savingStorageMounts = true) }
+        if (previous.savingStorageMounts) return
+        viewModelScope.launch {
+            try {
+                repository.setStorageMounts(id, mounts)
+                val workspace = repository.getById(id)
+                val layout = repository.layout(id)
+                _state.update { it.copy(workspace = workspace, layout = layout) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _settingsError.value = error.message.orEmpty()
+            } finally {
+                _state.update { it.copy(savingStorageMounts = false) }
+            }
+        }
+    }
+
     fun setToolApproval(toolName: String, needsApproval: Boolean) {
         viewModelScope.launch {
             val workspace = state.value.workspace ?: return@launch
@@ -381,6 +402,7 @@ data class WorkspaceDetailState(
     val entries: List<WorkspaceFileEntry> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    val savingStorageMounts: Boolean = false,
     val exporting: Boolean = false,
     val exportCompleted: Int = 0,
     val exportTotal: Int = 0,

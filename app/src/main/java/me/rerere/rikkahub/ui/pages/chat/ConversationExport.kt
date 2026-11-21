@@ -576,8 +576,11 @@ private fun ExportedChatMessage(message: UIMessage, senderName: String, options:
                                             MaterialTheme.colorScheme.surfaceContainerHighest
                                         } else MaterialTheme.colorScheme.surfaceContainerLow,
                                     ),
-                                ) { MarkdownBlock(content = part.text, modifier = Modifier.padding(8.dp)) }
-                            } else MarkdownBlock(content = part.text)
+                                ) { MarkdownBlock(
+                                    content = me.rerere.rikkahub.data.model.StickerReplyResolver.renderNamedStickers(part.text),
+                                    modifier = Modifier.padding(8.dp),
+                                ) }
+                            } else MarkdownBlock(content = me.rerere.rikkahub.data.model.StickerReplyResolver.renderNamedStickers(part.text))
                         }
                     }
                     is UIMessagePart.Image -> AsyncImage(

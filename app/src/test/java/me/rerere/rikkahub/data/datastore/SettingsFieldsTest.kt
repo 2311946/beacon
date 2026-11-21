@@ -183,6 +183,26 @@ class SettingsFieldsTest {
     }
 
     @Test
+    fun `paragraph bubbles default off and persist with novel style and theme`() {
+        val legacy = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
+        assertFalse(legacy.splitAssistantBubbleByParagraph)
+        assertFalse(emptyPreferences().toSettings().displaySetting.splitAssistantBubbleByParagraph)
+        val original = SAMPLE.copy(displaySetting = SAMPLE.displaySetting.copy(
+            chatThemeId = "kuromi", enableNovelMessageStyle = true,
+            showAssistantBubble = false, splitAssistantBubbleByParagraph = true,
+        ))
+        val preferences = mutablePreferencesOf().apply { putSettings(original) }
+        val restored = preferences.toSettings()
+        assertEquals(original, restored)
+        assertEquals(true, BuiltInChatTheme.fromId(restored.displaySetting.chatThemeId).appearance().forceAssistantBubble)
+        val disabled = restored.copy(displaySetting = restored.displaySetting.copy(splitAssistantBubbleByParagraph = false))
+        preferences.putSettings(disabled, persisted = restored)
+        assertEquals(disabled, preferences.toSettings())
+        assertEquals(true, preferences.toSettings().displaySetting.enableNovelMessageStyle)
+        assertEquals(restored.assistants, preferences.toSettings().assistants)
+    }
+
+    @Test
     fun `legacy display settings fall back to global call voice`() {
         val restored = JsonInstant.decodeFromString<DisplaySetting>("""{"userNickname":"existing"}""")
         assertEquals(null, restored.voiceCallTtsProvider)

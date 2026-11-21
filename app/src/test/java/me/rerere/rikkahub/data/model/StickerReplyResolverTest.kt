@@ -30,6 +30,16 @@ class StickerReplyResolverTest {
         .toList()
 
     @Test
+    fun `individual sticker names enter catalog and resolve independently of group`() {
+        val named = listOf(StickerGroup("g", "日常", listOf(
+            Sticker("a", happy, "开心"), Sticker("b", sad, "委屈"),
+        )))
+        assertEquals(image(sad), StickerReplyResolver.resolve("[表情包:委屈]", named))
+        val catalog = entries(StickerReplyResolver.buildPrompt(named))
+        assertEquals(listOf("开心", "委屈"), catalog.map { it.getValue("name").jsonPrimitive.content })
+    }
+
+    @Test
     fun `markers resolve filenames across supported labels and bracket styles`() {
         listOf("[图片:happy]", "【表情：happy】", "[表情包: happy ]", "[IMAGE:HAPPY]", "【sticker:happy】")
             .forEach { assertEquals(it, image(happy), StickerReplyResolver.resolve(it, groups)) }
@@ -307,7 +317,7 @@ class StickerReplyResolverTest {
         val prefix = "https://example.com/render?"
         fun url(length: Int) = prefix + "x".repeat(length - prefix.length)
         val first = url(5_000)
-        val firstEntry = "{\"group\":\"g\",\"filename\":\"\",\"url\":\"$first\"}"
+        val firstEntry = "{\"group\":\"g\",\"name\":\"\",\"filename\":\"\",\"url\":\"$first\"}"
         val overhead = firstEntry.length - first.length
         val exact = url(11_000 - firstEntry.length - 1 - overhead)
         val exactEntries = entries(StickerReplyResolver.buildPrompt(listOf(group("g", first, exact))))

@@ -18,9 +18,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceMountUnavailableException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -111,7 +113,7 @@ class WorkspaceTerminalSessionManager internal constructor(
         lateinit var job: Job
         job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
-                createTab(workspace = workspace, onlyIfEmpty = onlyIfEmpty)
+                createTab(cachedWorkspace = workspace, onlyIfEmpty = onlyIfEmpty)
             } finally {
                 creationJobs.remove(root, job)
             }
@@ -120,15 +122,24 @@ class WorkspaceTerminalSessionManager internal constructor(
         job.start()
     }
 
-    private suspend fun createTab(workspace: WorkspaceEntity, onlyIfEmpty: Boolean) = withContext(
+    private suspend fun createTab(cachedWorkspace: WorkspaceEntity, onlyIfEmpty: Boolean) = withContext(
         Dispatchers.Main.immediate
     ) {
-        val root = workspace.root
+        val root = cachedWorkspace.root
         val initialState = currentState(root)
         if (initialState.isCreating || (onlyIfEmpty && initialState.tabs.isNotEmpty())) {
             return@withContext
         }
-        updateState(root) { it.copy(isCreating = true) }
+        updateState(root) { it.copy(isCreating = true, errorMessage = null) }
+        // 只对新会话读取最新配置，不替换或重启已打开的终端。
+        val workspace = try {
+            workspaceRepository.getById(cachedWorkspace.id) ?: cachedWorkspace
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            updateState(root) { it.copy(isCreating = false, errorMessage = terminalErrorMessage(error)) }
+            return@withContext
+        }
 
         // 不在本机 Rootfs 里运行的终端 (如远程) 无需准备, 连接在会话启动时建立
         val prepared = if (!workspace.capabilities().rootfs ||
@@ -169,18 +180,22 @@ class WorkspaceTerminalSessionManager internal constructor(
             onTitleUpdated = { title -> updateTitle(root, tabId, title) },
             onFinished = { markFinished(root = root, tabId = tabId) },
         )
-        val session = runCatching {
+        val result = runCatching {
             createWorkspaceTerminalSession(
                 transport = terminalTransport(workspace),
                 root = root,
                 client = client,
             )
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             Log.e(TAG, "Failed to create terminal for workspace $root", error)
-        }.getOrNull()
+        }
+        val session = result.getOrNull()
 
         if (session == null) {
-            updateState(root) { it.copy(isCreating = false) }
+            updateState(root) {
+                it.copy(isCreating = false, errorMessage = terminalErrorMessage(result.exceptionOrNull()))
+            }
             return@withContext
         }
 
@@ -208,9 +223,22 @@ class WorkspaceTerminalSessionManager internal constructor(
                 workspaceRepository.openSshShell(workspace, columns, rows)
             }
         } else {
-            workspaceManager.terminalLaunch(workspace.root, workspace.shellCompatibilityMode)?.toTransport()
+            workspaceManager.terminalLaunch(
+                root = workspace.root,
+                shellCompatibilityMode = workspace.shellCompatibilityMode,
+                extraMounts = workspace.extraBindMounts(),
+            )?.toTransport()
                 ?: error("Interactive terminal is not supported")
         }
+
+    private fun terminalErrorMessage(error: Throwable?): String = when (error) {
+        is WorkspaceMountUnavailableException -> appContext.getString(
+            R.string.workspace_terminal_mounts_unavailable,
+            error.targets.joinToString(),
+        )
+
+        else -> error?.message ?: appContext.getString(R.string.workspace_terminal_start_failed)
+    }
 
     private fun updateTitle(root: String, tabId: Long, title: String?) {
         val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
@@ -262,6 +290,7 @@ internal data class WorkspaceTerminalTabsState(
     val readiness: WorkspaceTerminalReadiness = WorkspaceTerminalReadiness.Loading,
     val isCreating: Boolean = false,
     val nextTabNumber: Int = 1,
+    val errorMessage: String? = null,
 )
 
 internal data class WorkspaceTerminalTab(

@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -84,7 +85,6 @@ import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.datastore.StickerStore
 import me.rerere.rikkahub.data.model.StickerReplyResolver
 import me.rerere.rikkahub.data.model.AssistantAffectScope
@@ -96,6 +96,7 @@ import me.rerere.rikkahub.data.model.wakeupMessagePresentation
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.rikkahub.utils.toMessageTimeString
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.ui.components.message.tools.SpeechPreview
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.SelectableContent
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
@@ -106,6 +107,7 @@ import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalWorkspaceId
 import me.rerere.rikkahub.ui.theme.LocalChatFontFamily
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
@@ -306,7 +308,8 @@ fun ChatMessage(
                     onToolApproval = onToolApproval,
                     onToolAnswer = onToolAnswer,
                     onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
-                    voiceCallDetails = isVoiceCall && showVoiceCallDetails,
+                    voiceCallDetails = isVoiceCall && (showVoiceCallDetails || voiceCallExpanded),
+                    allowParagraphBubbles = !isVoiceCall,
                 )
 
                 message.translation?.let { translation ->
@@ -480,6 +483,7 @@ private fun MessagePartsBlock(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
     voiceCallDetails: Boolean = false,
+    allowParagraphBubbles: Boolean = true,
 ) {
     val context = LocalContext.current
     val stickerStore = remember(context) { StickerStore.get(context) }
@@ -657,29 +661,54 @@ private fun MessagePartsBlock(
                                         .animateContentSize(),
                                 ) {
                                     MarkdownBlock(
-                                        content = part.text.replaceRegexes(
-                                            assistant = assistant,
-                                            scope = AssistantAffectScope.USER,
-                                            visual = true,
+                                        content = StickerReplyResolver.renderNamedStickers(
+                                            part.text.replaceRegexes(
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.USER,
+                                                visual = true,
+                                            )
                                         ),
                                         onClickCitation = handleClickCitation
                                     )
                                 }
                             } else {
-                                if (voiceCallDetails || chatTheme.forceAssistantBubble || settings.displaySetting.showAssistantBubble) {
-                                    ChatMessageBubble(
-                                        role = role,
-                                        color = if (voiceCallDetails) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity)
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-                                        voiceCall = voiceCallDetails,
+                                if (voiceCallDetails && role == MessageRole.ASSISTANT) {
+                                    VoiceCallSpeechPreview(
+                                        text = assistantDisplayText,
+                                        replayText = parts.filterIsInstance<UIMessagePart.Text>()
+                                            .joinToString("\n\n") { it.text }
+                                            .trim(),
                                         modifier = Modifier.animateContentSize(),
-                                    ) {
-                                        MarkdownBlock(
-                                            content = assistantDisplayText,
-                                            novelStyle = role == MessageRole.ASSISTANT && settings.displaySetting.enableNovelMessageStyle,
-                                            streaming = streamingText,
-                                            onClickCitation = handleClickCitation,
-                                        )
+                                    )
+                                } else if (voiceCallDetails || chatTheme.forceAssistantBubble || settings.displaySetting.showAssistantBubble) {
+                                    val splitParagraphs = allowParagraphBubbles && !voiceCallDetails &&
+                                        role == MessageRole.ASSISTANT &&
+                                        settings.displaySetting.splitAssistantBubbleByParagraph &&
+                                        !me.rerere.rikkahub.data.model.ChatImageGeneration.isMarker(part)
+                                    // 在视觉正则、表情和生图折叠转换之后判断，保护最终 Markdown 结构。
+                                    val paragraphs = remember(assistantDisplayText, splitParagraphs) {
+                                        if (splitParagraphs) splitMarkdownParagraphs(assistantDisplayText).filter { it.isNotBlank() }
+                                        else listOf(assistantDisplayText)
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        paragraphs.forEachIndexed { index, paragraph ->
+                                            key(index) {
+                                                ChatMessageBubble(
+                                                    role = role,
+                                                    color = if (voiceCallDetails) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity)
+                                                    else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                                    voiceCall = voiceCallDetails,
+                                                    modifier = Modifier.animateContentSize(),
+                                                ) {
+                                                    MarkdownBlock(
+                                                        content = paragraph,
+                                                        novelStyle = role == MessageRole.ASSISTANT && settings.displaySetting.enableNovelMessageStyle,
+                                                        streaming = streamingText && index == paragraphs.lastIndex,
+                                                        onClickCitation = handleClickCitation,
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 } else {
                                     MarkdownBlock(
@@ -787,6 +816,29 @@ private fun MessagePartsBlock(
     // Annotations (always rendered at the end)
     if (annotations.isNotEmpty()) {
         ChatMessageCitations(annotations = annotations)
+    }
+}
+
+@Composable
+private fun VoiceCallSpeechPreview(
+    text: String,
+    replayText: String,
+    modifier: Modifier = Modifier,
+) {
+    val tts = LocalTTSState.current
+    val replayEnabled by tts.isAvailable.collectAsStateWithLifecycle()
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    ) {
+        SpeechPreview(
+            text = text,
+            onReplay = { tts.speak(replayText) },
+            replayEnabled = replayEnabled,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        )
     }
 }
 

@@ -118,6 +118,44 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun readResultInvokesTerminationCallbackOnTimeout() {
+        val process = ProcessBuilder("/bin/sh", "-c", "exec sleep 10").start()
+        var terminated = false
+
+        val result = process.readResult(timeoutMillis = 50) {
+            terminated = true
+            destroyForcibly()
+        }
+
+        assertTrue(result.timedOut)
+        assertTrue(terminated)
+    }
+
+    @Test
+    fun readResultInvokesTerminationCallbackWhenInterrupted() {
+        val process = ProcessBuilder("/bin/sh", "-c", "exec sleep 10").start()
+        val terminated = java.util.concurrent.CountDownLatch(1)
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val thread = Thread {
+            try {
+                process.readResult(timeoutMillis = 10_000) {
+                    terminated.countDown()
+                    destroyForcibly()
+                }
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        thread.start()
+        thread.interrupt()
+        thread.join(5_000)
+
+        assertFalse(thread.isAlive)
+        assertTrue(terminated.await(1, java.util.concurrent.TimeUnit.SECONDS))
+        assertTrue(failure.get() is InterruptedException)
+    }
+
+    @Test
     fun commandWithoutStdinGetsImmediateEof() {
         val baseDir = Files.createTempDirectory("workspace-stdin-eof-test").toFile()
         val manager = WorkspaceManager(baseDir)

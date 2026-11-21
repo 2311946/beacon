@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -43,28 +41,22 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Connect
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import org.koin.compose.koinInject
 
+// The toolbar owns the entry point; the dialog is rendered by the page so it survives IME changes.
 @Composable
-fun ProviderConnectionTester(
+fun ProviderConnectionTestDialog(
     internalProvider: ProviderSetting,
+    onDismissRequest: () -> Unit,
 ) {
-    var showTestDialog by remember { mutableStateOf(false) }
     val providerManager = koinInject<ProviderManager>()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    IconButton(onClick = { showTestDialog = true }) {
-        Icon(HugeIcons.Connect, null)
-    }
-
-    if (showTestDialog) {
         var model by remember(internalProvider) {
             mutableStateOf(internalProvider.models.firstOrNull { it.type == ModelType.CHAT })
         }
@@ -81,7 +73,7 @@ fun ProviderConnectionTester(
         }
 
         AlertDialog(
-            onDismissRequest = { showTestDialog = false },
+            onDismissRequest = onDismissRequest,
             title = {
                 Text(stringResource(R.string.setting_provider_page_test_connection))
             },
@@ -116,7 +108,7 @@ fun ProviderConnectionTester(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showTestDialog = false }) {
+                TextButton(onClick = onDismissRequest) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -225,7 +217,6 @@ fun ProviderConnectionTester(
             }
         )
     }
-}
 
 @Composable
 private fun TestResultItem(

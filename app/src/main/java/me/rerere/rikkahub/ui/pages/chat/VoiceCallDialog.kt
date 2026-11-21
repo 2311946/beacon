@@ -64,6 +64,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import androidx.compose.ui.draw.rotate
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.ui.components.message.tools.SpeechPreview
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 
 @Composable
@@ -71,6 +72,7 @@ fun VoiceCallDialog(
     assistant: Assistant,
     state: VoiceSessionState,
     aiSubtitle: String,
+    onReplay: () -> Boolean,
     onDismiss: () -> Unit,
     onToggleMute: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -300,7 +302,12 @@ fun VoiceCallDialog(
             )
             Spacer(Modifier.height(16.dp))
 
-            val subtitle = aiSubtitle.ifBlank { state.lastReply }
+            val subtitle = if (state.phase == VoicePhase.Speaking && state.lastReply.isNotBlank()) {
+                state.lastReply
+            } else {
+                aiSubtitle.ifBlank { state.lastReply }
+            }
+            val canReplay = state.canReplayReply && subtitle == state.lastReply
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -321,15 +328,13 @@ fun VoiceCallDialog(
                     }
                 }
                 if (subtitle.isNotBlank()) {
-                    Surface(color = colors.primaryContainer, shape = MaterialTheme.shapes.large) {
-                        Text(
-                            text = subtitle,
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = colors.onPrimaryContainer,
-                            // Keep long replies readable by scrolling the subtitle area.
-                        )
-                    }
+                    SpeechPreview(
+                        text = subtitle,
+                        onReplay = { onReplay() },
+                        modifier = Modifier.fillMaxWidth(),
+                        replayEnabled = canReplay,
+                        showSpeaker = true,
+                    )
                 }
                 (state.error ?: routeError ?: routeMessage)?.takeIf(String::isNotBlank)?.let { message ->
                     Text(

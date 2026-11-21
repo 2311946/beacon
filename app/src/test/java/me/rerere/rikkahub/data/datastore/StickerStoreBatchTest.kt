@@ -117,45 +117,125 @@ class StickerStoreBatchTest {
     }
 
     @Test
-    fun `all invalid URLs report original line numbers including ignored blanks`() {
+    fun `named entries accept both colon styles mixed with plain URLs`() {
+        val preferences = MemoryPreferences()
+        val store = newStore(preferences)
+        val group = store.addGroup("表情")
+        val added = store.addStickers(group.id, " 开心 ： $first \r\n抱抱:$second\nhttps://example.com/third.png")
+
+        assertEquals(listOf(first, second, "https://example.com/third.png"), added.map { it.url })
+        assertEquals(listOf("开心", "抱抱", ""), added.map { it.name })
+        assertEquals(added, newStore(preferences).groups.value.single().stickers)
+    }
+
+    @Test
+    fun `names on previous lines accept both trailing colons and skip blank lines`() {
+        val preferences = MemoryPreferences()
+        val store = newStore(preferences)
+        val group = store.addGroup("表情")
+        val added = store.addStickers(group.id, " 开心： \r\n\r\n $first \r\n抱抱:\n \t\n$second")
+
+        assertEquals(listOf(first, second), added.map { it.url })
+        assertEquals(listOf("开心", "抱抱"), added.map { it.name })
+        assertEquals(added, newStore(preferences).groups.value.single().stickers)
+    }
+
+    @Test
+    fun `split names inline names and unnamed URLs can be mixed without leaking names`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("表情")
+        val third = "https://example.com/third.png"
+        val added = store.addStickers(group.id, "开心\n$first\n$second\n候选名称：\n抱抱:$third\n$first\n未配对名称：")
+
+        assertEquals(listOf(first, second, third, first), added.map { it.url })
+        assertEquals(listOf("开心", "", "抱抱", ""), added.map { it.name })
+    }
+
+    @Test
+    fun `only most recent text line names the next URL and uses existing normalization`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("表情")
+        val added = store.addStickers(group.id, "旧名称：\n [抱抱]  【委屈】 ：\n$first\n${"啊".repeat(90)}:\n$second")
+
+        assertEquals(listOf("抱抱 委屈", "啊".repeat(80)), added.map { it.name })
+    }
+
+    @Test
+    fun `invalid HTTP lines consume pending names and uppercase URLs keep their content`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("表情")
+        val added = store.addStickers(group.id, "不能串名：\nhttps://example.com:0/bad.png\n$first\n开心:\nHTTPS://example.com/First.PNG?token=AbC#View\n$second")
+
+        assertEquals(listOf(first, "$first#View", second), added.map { it.url })
+        assertEquals(listOf("", "开心", ""), added.map { it.name })
+    }
+
+    @Test
+    fun `split named batch still writes all valid stickers in one commit`() {
+        val preferences = MemoryPreferences()
+        val store = newStore(preferences)
+        val group = store.addGroup("表情")
+        val commits = preferences.commitCalls
+        val added = store.addStickers(group.id, "开心：\n$first\n抱抱：\n$second")
+
+        assertEquals(commits + 1, preferences.commitCalls)
+        assertEquals(added, store.groups.value.single().stickers)
+    }
+
+    @Test
+    fun `URL colons and case remain intact and empty names are allowed`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("表情")
+        val url = "https://example.com:8443/a:b.png?token=Ab:C#x:y"
+        val added = store.addStickers(group.id, "$url\n委屈：HTTPS://example.com:8443/a:b.png?token=Ab:C#x:y\n：$first\n:$second")
+
+        assertEquals(listOf(url, url, first, second), added.map { it.url })
+        assertEquals(listOf("", "委屈", "", ""), added.map { it.name })
+    }
+
+    @Test
+    fun `names use existing normalization without being validated as URLs`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("表情")
+        val added = store.addStickers(group.id, " [抱抱]  【委屈】 ： $first\n${"啊".repeat(90)}:$second")
+
+        assertEquals(listOf("抱抱 委屈", "啊".repeat(80)), added.map { it.name })
+        assertEquals(listOf(first, second), added.map { it.url })
+    }
+
+    @Test
+    fun `invalid lines are skipped while valid entries are committed once`() {
         val preferences = MemoryPreferences()
         val store = newStore(preferences)
         val group = store.addGroup("表情")
         val beforeEdits = preferences.editCalls
         val beforeCommits = preferences.commitCalls
-        val exception = assertThrows(IllegalArgumentException::class.java) {
-            store.addStickers(group.id, "\r\n$first\r\nftp://example.com/a.png\r\n \t\r\nhttps://example.com:0/a.png\r\nhttps://example.com/a b.png\r\n")
-        }
+        val added = store.addStickers(group.id, "\r\n$first\r\nftp://example.com/a.png\r\n \t\r\nhttps://example.com:0/a.png\r\nhttps://example.com/a b.png\r\n说明文字\n坏图：not-a-url\n坏图:file:///tmp/a.png\n空地址：\n抱抱:$second")
 
-        assertEquals(
-            "第 3 行：图片地址只支持 HTTP 或 HTTPS\n第 5 行：图片地址端口无效\n第 6 行：请输入有效的 HTTP 或 HTTPS 图片地址",
-            exception.message,
-        )
-        assertEquals(beforeEdits, preferences.editCalls)
-        assertEquals(beforeCommits, preferences.commitCalls)
-        assertTrue(store.groups.value.single().stickers.isEmpty())
+        assertEquals(listOf(first, second), added.map { it.url })
+        assertEquals(listOf("", "抱抱"), added.map { it.name })
+        assertEquals(beforeEdits + 1, preferences.editCalls)
+        assertEquals(beforeCommits + 1, preferences.commitCalls)
+        assertEquals(added, store.groups.value.single().stickers)
     }
 
     @Test
-    fun `one invalid URL prevents saving every valid item in the batch`() {
+    fun `credential URLs are skipped without blocking valid items in the batch`() {
         val preferences = MemoryPreferences()
         val store = newStore(preferences)
         val group = store.addGroup("表情")
         store.addSticker(group.id, first)
         val before = store.groups.value
-        val persisted = preferences.snapshot()
         val beforeEdits = preferences.editCalls
         val beforeCommits = preferences.commitCalls
 
-        assertThrows(IllegalArgumentException::class.java) {
-            store.addStickers(group.id, "$second\nhttps://user:password@example.com/a.png\nhttps://example.com/third.png")
-        }
+        val added = store.addStickers(group.id, "$second\nhttps://user:password@example.com/a.png\n名称：https://user:password@example.com/b.png\nhttps://example.com/third.png")
 
-        assertSame(before, store.groups.value)
-        assertEquals(persisted, preferences.snapshot())
-        assertEquals(beforeEdits, preferences.editCalls)
-        assertEquals(beforeCommits, preferences.commitCalls)
-        assertEquals(listOf(second), store.addStickers(group.id, second).map { it.url })
+        assertEquals(listOf(second, "https://example.com/third.png"), added.map { it.url })
+        assertEquals(before.single().stickers + added, store.groups.value.single().stickers)
+        assertEquals(beforeEdits + 1, preferences.editCalls)
+        assertEquals(beforeCommits + 1, preferences.commitCalls)
+        assertEquals(store.groups.value, newStore(preferences).groups.value)
     }
 
     @Test
@@ -168,7 +248,7 @@ class StickerStoreBatchTest {
         val beforeEdits = preferences.editCalls
         val beforeCommits = preferences.commitCalls
 
-        listOf("", "\n", " \t\r\n\t\r\n").forEach { input ->
+        listOf("", "\n", " \t\r\n\t\r\n", "说明文字\n名称：not-a-url\n空地址:", "ftp://example.com/a.png\n坏图：https://example.com:0/a.png").forEach { input ->
             val exception = assertThrows(IllegalArgumentException::class.java) { store.addStickers(group.id, input) }
             assertEquals("请至少输入一个 HTTP 或 HTTPS 图片地址", exception.message)
         }
@@ -219,7 +299,7 @@ class StickerStoreBatchTest {
             committed = Json.decodeFromString<List<StickerGroup>>(values.getValue("groups") as String)
         }
 
-        val added = store.addStickers(group.id, "$second\nhttps://example.com/third.webp")
+        val added = store.addStickers(group.id, "抱抱：$second\nhttps://example.com/third.webp")
 
         assertEquals(beforeEdits + 1, preferences.editCalls)
         assertEquals(beforeCommits + 1, preferences.commitCalls)
@@ -263,6 +343,44 @@ class StickerStoreBatchTest {
         assertThrows(IllegalStateException::class.java) { store.addStickers(group.id, first) }
         assertEquals(beforeCommits + 1, preferences.commitCalls)
         assertTrue(store.groups.value.single().stickers.isEmpty())
+    }
+
+    @Test
+    fun `legacy JSON without names loads and rename survives restart`() {
+        val prefs = MemoryPreferences()
+        val groupId = UUID.randomUUID().toString()
+        val stickerId = UUID.randomUUID().toString()
+        prefs.edit().putString("groups", """[{"id":"$groupId","name":"分组","stickers":[{"id":"$stickerId","url":"$first"}]}]""").commit()
+        val store = newStore(prefs)
+        assertNull(store.error.value)
+        assertEquals("", store.groups.value.single().stickers.single().name)
+        store.renameSticker(groupId, stickerId, "  委屈求抱抱  ")
+        val saved = newStore(prefs).groups.value.single().stickers.single()
+        assertEquals("委屈求抱抱", saved.name)
+        assertEquals(first, saved.url)
+        assertEquals(stickerId, saved.id)
+        store.renameSticker(groupId, stickerId, "")
+        assertEquals("", newStore(prefs).groups.value.single().stickers.single().name)
+    }
+
+    @Test
+    fun `named add and rename target only the selected sticker and reject stale ids`() {
+        val store = newStore(MemoryPreferences())
+        val group = store.addGroup("分组")
+        val named = store.addSticker(group.id, first, "开心")
+        val other = store.addSticker(group.id, second, "委屈")
+        store.renameSticker(group.id, named.id, "抱抱")
+        assertEquals(listOf(named.copy(name = "抱抱"), other), store.groups.value.single().stickers)
+        assertThrows(IllegalArgumentException::class.java) { store.renameSticker(group.id, "missing", "名称") }
+        assertThrows(IllegalArgumentException::class.java) { store.renameSticker("missing", named.id, "名称") }
+    }
+
+    @Test
+    fun `name formatting keeps signed URL and neutral unnamed fallback`() {
+        assertEquals("[表情包:开心] $first", stickerMessageText(first, " 开心 "))
+        assertEquals("[表情包:未命名] $first", stickerMessageText(first, " \n "))
+        assertEquals("抱抱 委屈", normalizeStickerName(" [抱抱]\n【委屈】 "))
+        assertEquals(80, normalizeStickerName("啊".repeat(90)).length)
     }
 
     private class MemoryPreferences : SharedPreferences {

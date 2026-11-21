@@ -3,10 +3,13 @@ package me.rerere.rikkahub.ui.components.message.tools
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -351,8 +354,7 @@ object ShellToolUI : ToolUIRenderer {
         Column(
             modifier = Modifier
                 .fillMaxHeight(0.8f)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -367,30 +369,58 @@ object ShellToolUI : ToolUIRenderer {
                 )
                 ShellExitStatus(content, MaterialTheme.typography.labelMedium)
             }
-            HighlightCodeBlock(
-                code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
-                language = "bash",
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (stdout.isNotEmpty()) {
-                Text(text = "stdout", style = MaterialTheme.typography.labelMedium)
-                HighlightCodeBlock(
-                    code = stdout,
-                    language = "plaintext",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (stderr.isNotEmpty()) {
-                Text(
-                    text = "stderr",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                HighlightCodeBlock(
-                    code = stderr,
-                    language = "plaintext",
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                val availableHeight = maxHeight
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = availableHeight * 0.5f)
+                            .clip(MaterialTheme.shapes.large)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        HighlightCodeBlock(
+                            code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
+                            language = "bash",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (stdout.isNotEmpty()) {
+                            Text(text = "stdout", style = MaterialTheme.typography.labelMedium)
+                            HighlightCodeBlock(
+                                code = stdout,
+                                language = "plaintext",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (stderr.isNotEmpty()) {
+                            Text(
+                                text = "stderr",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            HighlightCodeBlock(
+                                code = stderr,
+                                language = "plaintext",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

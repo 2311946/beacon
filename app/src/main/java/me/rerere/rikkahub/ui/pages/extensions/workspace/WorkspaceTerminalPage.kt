@@ -247,6 +247,14 @@ private fun WorkspaceTerminalContent(
                 }
             }
             if (selectedTab != null) {
+                state.errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 WorkspaceTerminalTabContent(
                     tab = selectedTab,
                     modifier = Modifier
@@ -263,7 +271,11 @@ private fun WorkspaceTerminalContent(
                 ) {
                     Text(
                         text = when {
-                            root == null || state.isCreating || state.readiness == WorkspaceTerminalReadiness.Loading -> {
+                            root == null || state.isCreating -> {
+                                stringResource(R.string.workspace_terminal_loading)
+                            }
+                            state.errorMessage != null -> state.errorMessage
+                            state.readiness == WorkspaceTerminalReadiness.Loading -> {
                                 stringResource(R.string.workspace_terminal_loading)
                             }
                             state.readiness == WorkspaceTerminalReadiness.NotInstalled -> {

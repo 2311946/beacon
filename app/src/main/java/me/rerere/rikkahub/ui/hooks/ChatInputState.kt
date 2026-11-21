@@ -41,19 +41,18 @@ class ChatInputState {
     }
 
     /** Insert into the current selection so stickers travel with the draft, edits and queued text. */
-    fun insertSticker(url: String) {
-        val escapedUrl = url.replace("\\", "%5C")
-            .replace("<", "%3C")
-            .replace(">", "%3E")
-            .replace(" ", "%20")
-            .replace("\r", "%0D")
-            .replace("\n", "%0A")
-        val markdown = "![表情](<$escapedUrl>)"
+    fun insertSticker(url: String, name: String = "") {
+        val marker = me.rerere.rikkahub.data.datastore.stickerMessageText(url, name)
+        val currentText = textContent.text.toString()
         textContent.edit {
             val start = selection.min
             val end = selection.max
-            replace(start, end, markdown)
-            selection = TextRange(start + markdown.length)
+            // 裸URL须与前后文字/下一张表情分开，避免连续插入时拼成一个地址。
+            val prefix = if (start > 0 && !currentText[start - 1].isWhitespace()) "\n" else ""
+            val suffix = if (end < currentText.length && !currentText[end].isWhitespace()) "\n" else " "
+            val inserted = prefix + marker + suffix
+            replace(start, end, inserted)
+            selection = TextRange(start + inserted.length)
         }
     }
 

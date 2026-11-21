@@ -2,6 +2,7 @@ package me.rerere.workspace
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -101,6 +102,102 @@ class LocalWorkspaceBackendTest {
         assertEquals(listOf("USER=root", "SHELL=/bin/sh", "/bin/sh"), launch.args.takeLast(3))
         assertTrue("PROOT_NO_SECCOMP=1" in launch.env)
         assertTrue("TMPDIR=${manager.tempDir(root).absolutePath}" in launch.env)
+    }
+
+    @Test
+    fun backendUsesWorkspaceMountsForLayoutReadsAndExecution() {
+        var executed: WorkspaceShellContext? = null
+        var terminal: WorkspaceTerminalContext? = null
+        val runner = object : WorkspaceShellRunner {
+            override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
+                executed = context
+                return WorkspaceCommandResult(exitCode = 0, stdout = "", stderr = "")
+            }
+
+            override fun terminalLaunch(context: WorkspaceTerminalContext): WorkspaceTerminalLaunch? {
+                terminal = context
+                return null
+            }
+        }
+        val (manager, skillsDir) = createManager(runner)
+        val documents = tempFolder.newFolder("documents")
+        val content = File(documents, "a.txt").apply { writeText("from storage") }
+        val extra = listOf(WorkspaceBindMount(documents, "/storage/shared", writable = true))
+        val backend = manager.backend(root, shellCompatibilityMode = true, extraMounts = extra)
+
+        assertEquals(manager.layout, manager.layout())
+        assertTrue(backend.layout.isWritable("/skills/a.txt"))
+        assertTrue(backend.layout.isWritable("/storage/shared/a.txt"))
+        assertFalse(manager.backend("other-workspace").layout.isWritable("/storage/shared/a.txt"))
+        assertEquals(listOf("/upload"), backend.layout.approvalRoots)
+        assertEquals(content.canonicalFile, backend.localAbsoluteFile("/storage/shared/a.txt"))
+        assertEquals(12L, backend.absoluteFileSize("/storage/shared/a.txt"))
+        val output = ByteArrayOutputStream()
+        backend.exportAbsoluteFile("/storage/shared/a.txt", output)
+        assertEquals("from storage", output.toString(Charsets.UTF_8.name()))
+
+        backend.executeCommand("true", cwd = "", timeoutMillis = 123L, stdin = null)
+        manager.terminalLaunch(root, shellCompatibilityMode = true, extraMounts = extra)
+        val commandContext = checkNotNull(executed)
+        val terminalContext = checkNotNull(terminal)
+        assertEquals(commandContext.bindMounts, terminalContext.bindMounts)
+        assertEquals(listOf("/skills", "/upload", "/storage/shared"), commandContext.bindMounts.map { it.target })
+        assertEquals(skillsDir, commandContext.bindMounts.first().source)
+        assertEquals(extra.single(), commandContext.bindMounts.last())
+        assertEquals(123L, commandContext.timeoutMillis)
+        assertTrue(commandContext.shellCompatibilityMode)
+        assertTrue(terminalContext.shellCompatibilityMode)
+    }
+
+    @Test
+    fun backendRejectsUnavailableMountForAbsoluteAccessAndWrites() {
+        val runner = object : WorkspaceShellRunner {
+            override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult =
+                error("不可用挂载不得交给执行器")
+        }
+        val (manager, _) = createManager(runner)
+        val missing = File(tempFolder.root, "missing-storage")
+        val notDirectory = tempFolder.newFile("storage-file")
+        val extra = listOf(
+            WorkspaceBindMount(missing, "/storage/missing"),
+            WorkspaceBindMount(notDirectory, "/storage/not-directory"),
+        )
+        val backend = manager.backend(root, extraMounts = extra)
+
+        val error = assertThrows(WorkspaceMountUnavailableException::class.java) {
+            backend.localAbsoluteFile("/storage/missing/a.txt")
+        }
+        assertEquals(listOf("/storage/missing", "/storage/not-directory"), error.targets)
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            backend.absoluteFileSize("/storage/missing/a.txt")
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            backend.exportAbsoluteFile("/storage/missing/a.txt", ByteArrayOutputStream())
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            backend.executeCommand("true", cwd = "", timeoutMillis = 1_000L, stdin = null)
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            backend.writeAbsoluteText("/storage/missing/a.txt", "hello", overwrite = true)
+        }
+        assertFalse(missing.exists())
+        assertTrue(notDirectory.isFile)
+        assertFalse(File(manager.linuxDir(root), "storage/missing/a.txt").exists())
+    }
+
+    @Test
+    fun terminalArgumentsIncludeWorkspaceAndGlobalMounts() {
+        val nativeLibraryDir = tempFolder.newFolder("native-extra")
+        val (manager, skillsDir) = createManager(ProotShellRunner(nativeLibraryDir))
+        manager.ensureWorkspace(root)
+        val documents = tempFolder.newFolder("terminal-documents")
+        val extra = listOf(WorkspaceBindMount(documents, "/storage/shared"))
+
+        val launch = manager.terminalLaunch(root, shellCompatibilityMode = false, extraMounts = extra)!!
+
+        assertTrue("${skillsDir.absolutePath}:/skills" in launch.args)
+        assertTrue(launch.args.any { it.endsWith(":/upload") })
+        assertTrue("${documents.absolutePath}:/storage/shared" in launch.args)
     }
 
     @Test

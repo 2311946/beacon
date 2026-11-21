@@ -1820,4 +1820,21 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_phone_use_enable_service">在无障碍设置中开启 \"RikkaHub Phone Use\"</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">请先开启后台悬浮窗</string>
   <string name="phone_use_accessibility_description">启用 Phone Use 工具后，允许 AI 助手读取屏幕并为您执行点按、滑动和文本输入。除非助手正在运行您请求的任务，否则不会执行任何操作。</string>
+  <string name="workspace_detail_storage_title">外部存储</string>
+  <string name="workspace_detail_storage_desc">将设备共享存储中的文件夹挂载到 Rootfs 中的相同路径，修改会直接影响设备上的真实文件。更改后，请重新打开已有终端，以使更改生效。</string>
+  <string name="workspace_detail_storage_permission_missing">未授予所有文件访问权限</string>
+  <string name="workspace_detail_storage_permission_missing_desc">点击以在系统设置中授予权限。若未授予，将无法读取或写入已挂载的文件夹。</string>
+  <string name="workspace_detail_storage_writable">AI 写入免审批</string>
+  <string name="workspace_detail_storage_needs_approval">AI 写入需审批</string>
+  <string name="workspace_detail_storage_writable_desc">关闭时，AI 使用文件工具写入此文件夹前，你必须先确认。这不是只读挂载，终端命令仍可修改或删除真实文件。</string>
+  <string name="workspace_detail_storage_add">添加文件夹</string>
+  <string name="workspace_detail_storage_edit">编辑文件夹</string>
+  <string name="workspace_detail_storage_path">路径</string>
+  <string name="workspace_detail_storage_pick_folder">选择文件夹</string>
+  <string name="workspace_detail_storage_pick_failed">无法解析该文件夹的路径。请手动输入。</string>
+  <string name="workspace_detail_storage_path_not_absolute">路径必须是绝对路径</string>
+  <string name="workspace_detail_storage_path_outside">只能挂载 /storage 下的文件夹，例如 %1$s</string>
+  <string name="workspace_detail_storage_path_unavailable">该文件夹不存在，或未授予所有文件访问权限</string>
+  <string name="workspace_terminal_mounts_unavailable">已挂载的文件夹不可用：%1$s。请在工作区设置中修复或移除它们。</string>
+  <string name="workspace_terminal_start_failed">无法启动终端</string>
 </resources>

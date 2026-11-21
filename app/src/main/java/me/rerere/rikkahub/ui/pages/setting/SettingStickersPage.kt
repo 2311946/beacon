@@ -62,6 +62,7 @@ fun SettingStickersPage() {
     var addToGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var batchAddToGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingStickerDelete by remember { mutableStateOf<Pair<String, Sticker>?>(null) }
+    var pendingStickerRename by remember { mutableStateOf<Pair<String, Sticker>?>(null) }
     var pendingGroupDelete by remember { mutableStateOf<StickerGroup?>(null) }
     val group = groups.find { it.id == selectedGroupId } ?: groups.firstOrNull()
     var importGroupId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -79,7 +80,7 @@ fun SettingStickersPage() {
                 try {
                     val added = withContext(Dispatchers.IO) { store.importImages(target, uris) }
                     selectedGroupId = target
-                    importStatus = "已保存 ${added.size} 张本地表情"
+                    importStatus = "已保存 ${added.size} 张本地表情，点击缩略图可填写每张名称"
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -184,7 +185,7 @@ fun SettingStickersPage() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${group.stickers.size} 张表情 · 点击或长按可删除",
+                        text = "${group.stickers.size} 张表情 · 点击命名，长按删除",
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -221,12 +222,20 @@ fun SettingStickersPage() {
                         val requestDelete = {
                             if (storeError == null) pendingStickerDelete = group.id to sticker
                         }
-                        StickerThumbnail(
-                            sticker = sticker,
-                            onClick = requestDelete,
-                            clickLabel = "删除表情",
-                            onLongClick = requestDelete,
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            StickerThumbnail(
+                                sticker = sticker,
+                                onClick = { if (storeError == null) pendingStickerRename = group.id to sticker },
+                                clickLabel = "编辑表情名称",
+                                onLongClick = requestDelete,
+                            )
+                            Text(
+                                sticker.name.ifBlank { "未命名 · 点击填写" },
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -251,6 +260,10 @@ fun SettingStickersPage() {
             title = "添加 URL 表情",
             message = "请输入可直接访问的 HTTP 或 HTTPS 图片地址。",
             inputLabel = "图片 URL",
+            nameLabel = "表情名称（可选，例如：开心、委屈、抱抱）",
+            onConfirmWithName = { url, name ->
+                withContext(Dispatchers.IO) { store.addSticker(groupId, url, name) }
+            },
             keyboardType = KeyboardType.Uri,
             confirmLabel = "添加",
             onDismiss = { addToGroupId = null },
@@ -262,8 +275,8 @@ fun SettingStickersPage() {
     batchAddToGroupId?.let { groupId ->
         StickerActionDialog(
             title = "批量添加 URL 表情",
-            message = "每行输入一个 HTTP 或 HTTPS 图片地址，空行会忽略。全部地址校验通过后，一次加入当前分组。",
-            inputLabel = "图片 URL（每行一个）",
+            message = "支持名称与 URL 分两行，例如：\n开心：\nhttps://example.com/happy.png\n也支持「名称：URL」「名称:URL」单行格式和纯 URL。URL 前最近一行非 URL 文本作为名称，末尾冒号会去掉；连续 URL 不重复沿用名称。空行和无效地址会跳过，有效项一次加入当前分组。",
+            inputLabel = "名称与图片 URL（可分行或同行）",
             singleLine = false,
             minLines = 8,
             maxLines = 12,
@@ -273,6 +286,22 @@ fun SettingStickersPage() {
                 withContext(Dispatchers.IO) { store.addStickers(groupId, urls) }
             },
         )
+    }
+    pendingStickerRename?.let { (groupId, sticker) ->
+        androidx.compose.runtime.key(groupId, sticker.id) {
+            StickerActionDialog(
+                title = "编辑表情名称",
+                message = "用简短文字说明这张表情的含义，例如：委屈求抱抱。名称会随表情发送给 AI；留空则显示未命名。",
+                inputLabel = "表情名称",
+                initialInput = sticker.name,
+                allowBlankInput = true,
+                confirmLabel = "保存",
+                onDismiss = { pendingStickerRename = null },
+                onConfirm = { name ->
+                    withContext(Dispatchers.IO) { store.renameSticker(groupId, sticker.id, name) }
+                },
+            )
+        }
     }
     pendingStickerDelete?.let { (groupId, sticker) ->
         StickerActionDialog(
@@ -306,8 +335,13 @@ private fun StickerActionDialog(
     singleLine: Boolean = true,
     minLines: Int = 1,
     maxLines: Int = Int.MAX_VALUE,
+    initialInput: String = "",
+    allowBlankInput: Boolean = false,
+    nameLabel: String? = null,
+    onConfirmWithName: (suspend (String, String) -> Unit)? = null,
 ) {
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf(initialInput) }
+    var name by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -338,19 +372,29 @@ private fun StickerActionDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                     )
                 }
+                if (nameLabel != null) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; error = null },
+                        label = { Text(nameLabel) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !busy,
+                    )
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = !busy && (inputLabel == null || input.isNotBlank()),
+                enabled = !busy && (inputLabel == null || allowBlankInput || input.isNotBlank()),
                 onClick = {
                     if (!busy) {
                         busy = true
                         error = null
                         scope.launch {
                             try {
-                                onConfirm(input)
+                                if (onConfirmWithName != null) onConfirmWithName(input, name) else onConfirm(input)
                                 onDismiss()
                             } catch (exception: CancellationException) {
                                 throw exception

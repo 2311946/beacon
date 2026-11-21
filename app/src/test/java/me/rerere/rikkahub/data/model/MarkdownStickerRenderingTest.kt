@@ -13,8 +13,59 @@ class MarkdownStickerRenderingTest {
 
     private fun imageUrls(text: String): List<String> {
         val display = StickerReplyResolver.renderBareImageUrls(StickerReplyResolver.resolve(text, emptyList()))
-        return parseMarkdown(StickerReplyResolver.normalizeMarkdownImages(display)).blocks.filterIsInstance<MarkdownBlock.Paragraph>()
-            .flatMap { it.content }.filterIsInstance<MarkdownInline.Image>().map { it.url }
+        val prepared = StickerReplyResolver.prepareLocalImagesForDisplay(
+            StickerReplyResolver.normalizeMarkdownImages(display),
+        ) { it.startsWith("file:///data/user/0/beacon/files/stickers/") }
+        return parseMarkdown(prepared.content).blocks.filterIsInstance<MarkdownBlock.Paragraph>()
+            .flatMap { it.content }.filterIsInstance<MarkdownInline.Image>().map { prepared.urls[it.url] ?: it.url }
+    }
+
+    @Test fun `named sticker uses explicit URL not another image with matching name`() {
+        val raw = "看 [表情包:开心] $url 后文"
+        assertEquals("看 ![表情](<$url>) 后文", StickerReplyResolver.renderNamedStickers(raw))
+        val rendered = StickerReplyResolver.renderNamedStickers(raw)
+        assertEquals(rendered, StickerReplyResolver.renderNamedStickers(rendered))
+    }
+
+    @Test fun `named local stickers attach safely and preserve names in request text`() {
+        val local = "file:///data/user/0/beacon/files/stickers/a.png"
+        val raw = "[表情包:抱抱] $local [表情包:开心] $url"
+        val original = me.rerere.ai.ui.UIMessage.user(raw)
+        val request = StickerReplyResolver.attachLocalImages(original) { it == local }
+        assertEquals(raw, (request.parts.first() as me.rerere.ai.ui.UIMessagePart.Text).text)
+        assertEquals(listOf(local), request.parts.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Image>().map { it.url })
+        assertEquals(1, original.parts.size)
+        assertEquals(original, StickerReplyResolver.attachLocalImages(original) { false })
+        assertEquals(request, StickerReplyResolver.attachLocalImages(request) { true })
+    }
+
+    @Test fun `named sticker code escaped markers links and invalid URLs remain unchanged`() {
+        val marker = "[表情包:开心] $url"
+        listOf("`$marker`", "```\n$marker\n```", "\\$marker", "    $marker",
+            "[链接 $marker](https://example.com)", "[表情包:开心] https://user:pass@example.com/x.png"
+        ).forEach { assertEquals(it, StickerReplyResolver.renderNamedStickers(it)) }
+    }
+
+    @Test fun `explicit named URL takes priority during assistant streaming and mixed legacy markers`() {
+        val groups = listOf(StickerGroup("g", "心情", listOf(Sticker("s", url, "开心"))))
+        val explicit = "https://example.com/another.png"
+        val raw = "[表情包:开心] $explicit"
+        assertEquals(raw, StickerReplyResolver.resolve(raw, groups, streaming = true))
+        assertEquals("![表情](<$explicit>) ", StickerReplyResolver.resolve("$raw ", groups, streaming = true))
+        assertEquals("![表情](<$explicit>) ![表情](<$url>)",
+            StickerReplyResolver.resolve("$raw [图片:开心]", groups))
+        assertEquals("![表情](<$url>)", StickerReplyResolver.renderNamedStickers("[表情包:`开心`] $url"))
+    }
+
+    @Test fun `local display adapts only approved image destinations leaving file links and code filtered`() {
+        val local = "file:///data/user/0/beacon/files/stickers/a.png"
+        val raw = "![表情]($local) [链接]($local) `![]($local)` ![](file:///etc/passwd)"
+        val prepared = StickerReplyResolver.prepareLocalImagesForDisplay(raw) { it == local }
+        assertEquals(listOf(local), prepared.urls.values.toList())
+        assertEquals(true, prepared.content.contains("[链接]($local)"))
+        assertEquals(true, prepared.content.contains("`![]($local)`"))
+        assertEquals(true, prepared.content.contains("![](file:///etc/passwd)"))
+        assertEquals(listOf(local), imageUrls(StickerReplyResolver.renderNamedStickers("[表情包:抱抱] $local")))
     }
 
     @Test fun `local user sticker becomes a real image part without changing original message`() {

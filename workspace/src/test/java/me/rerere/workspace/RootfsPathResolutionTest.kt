@@ -60,6 +60,61 @@ class RootfsPathResolutionTest {
     }
 
     @Test
+    fun extraMountsResolveAndCountAsWritableOnlyWhenPassed() {
+        manager = createManager()
+        val documents = tempFolder.newFolder("documents")
+        File(documents, "a.txt").writeText("from storage")
+        val extra = listOf(
+            WorkspaceBindMount(documents, "/storage/emulated/0/Documents", writable = true),
+        )
+
+        val location = manager.resolveRootfsPath(root, "/storage/emulated/0/Documents/a.txt", extra)
+        assertEquals(documents, location.rootDir)
+        assertEquals("a.txt", location.relativePath)
+        assertEquals(12L, manager.rootfsFileSize(root, "/storage/emulated/0/Documents/a.txt", extra))
+        assertTrue(manager.layout(extra).isWritable("/storage/emulated/0/Documents/a.txt"))
+        assertEquals(
+            manager.linuxDir(root),
+            manager.resolveRootfsPath(root, "/storage/emulated/0/Documents/a.txt").rootDir,
+        )
+        assertTrue(!manager.layout.isWritable("/storage/emulated/0/Documents/a.txt"))
+    }
+
+    @Test
+    fun deeperExtraMountTakesPrecedenceOverGlobalMount() {
+        manager = createManager()
+        val nested = tempFolder.newFolder("nested-skills")
+        val extra = listOf(WorkspaceBindMount(nested, "/skills/private/"))
+
+        assertEquals(nested, manager.resolveRootfsPath(root, "/skills/private/a.txt", extra).rootDir)
+        assertEquals(skillsDir, manager.resolveRootfsPath(root, "/skills/private2/a.txt", extra).rootDir)
+        assertEquals(skillsDir, manager.resolveRootfsPath(root, "/skills/private/a.txt").rootDir)
+    }
+
+    @Test
+    fun unavailableMountDoesNotGetCreatedOrFallBackToRootfs() {
+        manager = createManager()
+        val missing = File(tempFolder.root, "missing-storage")
+        val extra = listOf(WorkspaceBindMount(missing, "/storage/shared"))
+        File(manager.linuxDir(root), "storage/shared").mkdirs()
+        File(manager.linuxDir(root), "storage/shared/a.txt").writeText("wrong fallback")
+
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            manager.resolveRootfsPath(root, "/storage/shared/a.txt", extra)
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            manager.resolveRootfsFile(root, "/storage/shared/a.txt", extra)
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            manager.rootfsFileSize(root, "/storage/shared/a.txt", extra)
+        }
+        assertThrows(WorkspaceMountUnavailableException::class.java) {
+            manager.exportRootfsFile(root, "/storage/shared/a.txt", ByteArrayOutputStream(), extra)
+        }
+        assertTrue(!missing.exists())
+    }
+
+    @Test
     fun workspacePathStillResolvesToFilesArea() {
         manager = createManager()
         File(manager.filesDir(root), "notes.txt").writeText("hello")

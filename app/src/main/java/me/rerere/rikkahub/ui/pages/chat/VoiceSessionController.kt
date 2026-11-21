@@ -23,6 +23,7 @@ import me.rerere.asr.ASRController
 import me.rerere.asr.ASRStatus
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.MessageQueuePausedException
+import java.util.concurrent.atomic.AtomicReference
 
 enum class VoicePhase { Off, Connecting, Listening, Transcribing, Waiting, Speaking, Error }
 
@@ -36,6 +37,9 @@ data class VoiceSessionState(
     val lastReply: String = "",
 ) {
     val isActive: Boolean get() = phase != VoicePhase.Off && phase != VoicePhase.Error
+    val canReplayReply: Boolean
+        get() = isActive && lastReply.isNotBlank() && pendingReplies == 0 &&
+            (phase == VoicePhase.Listening || phase == VoicePhase.Waiting)
 }
 
 /** Capture and generation run independently. TTS and mute both close the microphone. */
@@ -54,11 +58,17 @@ class VoiceSessionController(
         private set
     private var sessionToken: Any? = null
     private var endCall: (() -> Unit)? = null
+    private var activeAsr: ASRController? = null
+    private var replayEnabled = false
+    private var replyPlaybackPending = false
+    private val pendingReplay = AtomicReference<Event.Replay?>(null)
 
     private fun clearCall(token: Any?) {
         if (token == null || sessionToken !== token) return
         sessionToken = null
         activeCallId = null
+        replayEnabled = false
+        pendingReplay.set(null)
         val callback = endCall
         endCall = null
         callback?.invoke()
@@ -67,6 +77,7 @@ class VoiceSessionController(
     private sealed interface Event {
         data class Utterance(val text: String, val captureId: Long) : Event
         data class Reply(val text: String?) : Event
+        data class Replay(val text: String, val token: Any, val captureId: Long) : Event
         data class Failed(val error: Exception, val captureId: Long? = null) : Event
         data object MuteChanged : Event
     }
@@ -82,6 +93,9 @@ class VoiceSessionController(
         if (job?.isCompleted == false) return
         val token = Any()
         sessionToken = token
+        replayEnabled = forCall && speak != null
+        replyPlaybackPending = false
+        pendingReplay.set(null)
         activeCallId = if (forCall) kotlin.uuid.Uuid.random().toString() else null
         endCall = if (forCall) ({ onCallStateChanged(null) }) else null
         if (forCall) onCallStateChanged(activeCallId)
@@ -130,6 +144,27 @@ class VoiceSessionController(
         controls?.trySend(Event.MuteChanged)
     }
 
+    fun replayLastReply(): Boolean {
+        val token = sessionToken ?: return false
+        val events = controls ?: return false
+        val replay = Event.Replay(state.value.lastReply, token, captureVersion)
+        if (!canReplay(replay) || !pendingReplay.compareAndSet(null, replay)) return false
+        if (!events.trySend(replay).isSuccess) {
+            pendingReplay.compareAndSet(replay, null)
+            return false
+        }
+        return true
+    }
+
+    private fun canReplay(replay: Event.Replay): Boolean {
+        val current = state.value
+        val recognition = activeAsr?.state?.value
+        return replayEnabled && !replyPlaybackPending && activeCallId != null && sessionToken === replay.token &&
+            replay.captureId == captureVersion && current.canReplayReply && current.lastReply == replay.text &&
+            (recognition == null || (recognition.status == ASRStatus.Listening &&
+                recognition.errorMessage == null && recognition.voiceTurn.itemId == null))
+    }
+
     private suspend fun runSession(
         createAsr: () -> ASRController,
         speak: (suspend (String) -> Unit)?,
@@ -139,8 +174,8 @@ class VoiceSessionController(
         controls = events
         val submitted = Channel<Deferred<String?>>(Channel.UNLIMITED)
         val replies = ArrayDeque<String>()
-        var asr: ASRController? = null
         var capture: Job? = null
+        var replaying: Event.Replay? = null
 
         // Await replies in submission order, without blocking capture. Queue removal returns null.
         launch {
@@ -158,20 +193,23 @@ class VoiceSessionController(
                     capture?.cancelAndJoin()
                     capture = null
                     captureJob = null
-                    asr = null
+                    activeAsr = null
                 }
                 // Finish any sentence already in progress before giving TTS the microphone pause.
-                if (speak != null && replies.isNotEmpty() && asr?.state?.value?.voiceTurn?.itemId == null) {
+                if (speak != null && replies.isNotEmpty() && activeAsr?.state?.value?.voiceTurn?.itemId == null) {
                     capture?.cancelAndJoin()
                     capture = null
                     captureJob = null
-                    asr = null
+                    activeAsr = null
                     val reply = replies.removeFirst()
                     mutableState.update {
                         it.copy(phase = VoicePhase.Speaking, lastReply = reply, amplitudes = emptyList())
                     }
                     speak(reply)
                     delay(300) // Let the loudspeaker's tail decay before opening the microphone.
+                    replyPlaybackPending = replies.isNotEmpty()
+                    replaying?.let { pendingReplay.compareAndSet(it, null) }
+                    replaying = null
                     continue
                 }
                 // Turn-based calls wait for the reply and complete playback before reopening capture.
@@ -181,7 +219,7 @@ class VoiceSessionController(
                     mutableState.update { it.copy(phase = VoicePhase.Connecting, transcript = "", amplitudes = emptyList()) }
                     val recorder = createAsr()
                     val captureId = ++captureVersion
-                    asr = recorder
+                    activeAsr = recorder
                     capture = launch(start = CoroutineStart.UNDISPATCHED) {
                         try {
                             events.send(Event.Utterance(listen(recorder), captureId))
@@ -198,7 +236,7 @@ class VoiceSessionController(
                         capture?.join()
                         capture = null
                         captureJob = null
-                        asr = null
+                        activeAsr = null
                         if (event.text.isNotBlank()) {
                             val reply = enqueueMessage(event.text)
                             mutableState.update {
@@ -208,20 +246,41 @@ class VoiceSessionController(
                         }
                     }
                     is Event.Reply -> {
+                        event.text?.takeIf { speak != null && it.isNotBlank() }?.let {
+                            replies.addLast(it)
+                            replyPlaybackPending = true
+                        }
                         mutableState.update {
                             it.copy(
                                 pendingReplies = (it.pendingReplies - 1).coerceAtLeast(0),
                                 lastReply = event.text?.takeIf(String::isNotBlank) ?: it.lastReply,
                             )
                         }
-                        event.text?.takeIf { speak != null && it.isNotBlank() }?.let { replies.addLast(it) }
+                    }
+                    is Event.Replay -> {
+                        if (pendingReplay.get() !== event || !canReplay(event) || replies.isNotEmpty()) {
+                            pendingReplay.compareAndSet(event, null)
+                            continue
+                        }
+                        // 等待录音彻底关闭后才进入现有播报队列，并复查会话状态。
+                        capture?.cancelAndJoin()
+                        capture = null
+                        captureJob = null
+                        activeAsr = null
+                        if (!canReplay(event)) {
+                            pendingReplay.compareAndSet(event, null)
+                            continue
+                        }
+                        captureVersion++
+                        replaying = event
+                        replies.addLast(event.text)
                     }
                     is Event.Failed -> if (event.captureId == null || event.captureId == captureVersion) throw event.error
                     Event.MuteChanged -> {
                         capture?.cancelAndJoin()
                         capture = null
                         captureJob = null
-                        asr = null
+                        activeAsr = null
                     }
                 }
             }
@@ -229,6 +288,7 @@ class VoiceSessionController(
             controls = null
             captureJob = null
             capture?.cancelAndJoin()
+            activeAsr = null
             // Submitted messages belong to the chat queue; leaving voice mode only detaches observers.
             submitted.close()
             events.close()

@@ -192,6 +192,11 @@ class SettingsStore internal constructor(
         val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
 
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
+        internal suspend fun captureBeforeInitialization(context: Context): Pair<Settings, Int> {
+            val preferences = context.settingsStore.data.first()
+            return preferences.toSettings().normalized() to (preferences[LAUNCH_COUNT] ?: 0)
+        }
+
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {
             require(!settings.init) { "Cannot restore uninitialized settings" }
             // 启动次数和设置在同一次写入里落盘

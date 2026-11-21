@@ -76,6 +76,7 @@ import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.voiceCallIdOrNull
 import me.rerere.rikkahub.data.model.voiceCallRanges
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
@@ -188,9 +189,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     var showCall by rememberSaveable(id) { mutableStateOf(false) }
     var showCallPrompt by remember { mutableStateOf(false) }
     var showCallSettings by remember { mutableStateOf(false) }
-    var callBaseline by remember(id) { mutableStateOf(emptySet<Uuid>()) }
     val startVoiceCall = rememberVoiceModeStarter(vm, setting, forCall = true) {
-        callBaseline = conversation.currentMessages.map { it.id }.toSet()
         showCallPrompt = false
         showCall = true
         focusManager.clearFocus(force = true)
@@ -217,7 +216,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         )
     }
     if (showCall) {
-        val callMessages = conversation.currentMessages.filterNot { it.id in callBaseline }
+        val activeCallId = vm.voiceSession.activeCallId
+        val callMessages = conversation.currentMessages.filter { it.voiceCallIdOrNull() == activeCallId }
         val lastUserIndex = callMessages.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
         val aiSubtitle = callMessages.drop(lastUserIndex + 1)
             .filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
@@ -227,6 +227,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
             assistant = assistant,
             state = voiceState,
             aiSubtitle = aiSubtitle,
+            onReplay = vm.voiceSession::replayLastReply,
             onDismiss = {
                 vm.voiceSession.stop()
                 showCall = false

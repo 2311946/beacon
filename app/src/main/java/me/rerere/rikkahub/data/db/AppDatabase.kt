@@ -39,6 +39,7 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_22_23
 import me.rerere.rikkahub.data.db.migrations.Migration_28_29
+import me.rerere.rikkahub.data.db.migrations.Migration_34_35
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 
@@ -61,7 +62,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutonomousActivityEntity::class,
         AssistantCalendarDayEntity::class,
     ],
-    version = 34,
+    version = 36,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),

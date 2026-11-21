@@ -156,6 +156,19 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_title)) },
                     )
+                    switchItem(
+                        checked = displaySetting.splitAssistantBubbleByParagraph,
+                        onCheckedChange = { enabled ->
+                            displaySetting = displaySetting.copy(splitAssistantBubbleByParagraph = enabled)
+                            vm.updateSettings { latest ->
+                                latest.copy(displaySetting = latest.displaySetting.copy(splitAssistantBubbleByParagraph = enabled))
+                            }
+                        },
+                        headlineContent = { Text("助手按段落拆分气泡") },
+                        supportingContent = {
+                            Text("助手气泡或主题气泡生效时，普通正文按空行拆分，保留消息美化；含 Markdown 结构、折叠或生图描述时整段保留。单聊与群聊共用，不影响通话和导出。")
+                        },
+                    )
                     formItem(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_bubble_opacity_title)) },
                         trailingContent = { CardGroupValue("${(displaySetting.bubbleOpacity * 100).roundToInt()}%") },

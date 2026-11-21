@@ -56,11 +56,11 @@ import me.rerere.hugeicons.stroke.ChartLineData01
 import me.rerere.hugeicons.stroke.ChartScatter
 import me.rerere.hugeicons.stroke.Clipboard
 import me.rerere.hugeicons.stroke.Eraser
+import me.rerere.hugeicons.stroke.Play
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.MagicWand01
 import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.QuillWrite01
-import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Calendar03
 import me.rerere.hugeicons.stroke.CalendarAdd01
@@ -324,6 +324,52 @@ object ClipboardToolUI : ToolUIRenderer {
 }
 
 /**
+ * 工具与通话历史共用的朗读预览。
+ */
+@Composable
+internal fun SpeechPreview(
+    text: String,
+    onReplay: () -> Unit,
+    modifier: Modifier = Modifier,
+    replayEnabled: Boolean = true,
+    showSpeaker: Boolean = true,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (showSpeaker) {
+            Icon(
+                imageVector = HugeIcons.VolumeHigh,
+                contentDescription = stringResource(R.string.tts),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        FilledTonalIconButton(
+            onClick = onReplay,
+            enabled = replayEnabled,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = HugeIcons.Play,
+                contentDescription = stringResource(R.string.tool_ui_replay),
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+/**
  * 文本转语音: 摘要显示朗读文本与重播按钮
  */
 object TextToSpeechToolUI : ToolUIRenderer {
@@ -347,30 +393,11 @@ object TextToSpeechToolUI : ToolUIRenderer {
         val eventBus: AppEventBus = koinInject()
         val scope = rememberCoroutineScope()
         val text = context.arguments.getStringContent("text") ?: ""
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            FilledTonalIconButton(
-                onClick = { scope.launch { eventBus.emit(AppEvent.Speak(text)) } },
-                modifier = Modifier.size(28.dp),
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Refresh01,
-                    contentDescription = stringResource(R.string.tool_ui_replay),
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-        }
+        SpeechPreview(
+            text = text,
+            onReplay = { scope.launch { eventBus.emit(AppEvent.Speak(text)) } },
+            showSpeaker = false,
+        )
     }
 }
 

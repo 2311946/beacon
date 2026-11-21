@@ -16,7 +16,8 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("conversation_id")]
+    // 按会话读取节点时同时按 node_index 排序，避免每页重新扫描并排序整个会话。
+    indices = [Index("conversation_id", "node_index")]
 )
 data class MessageNodeEntity(
     @PrimaryKey

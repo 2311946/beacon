@@ -22,6 +22,20 @@ class ConversationExportContentTest {
     )
 
     @Test
+    fun namedStickerExportsAsImageWithoutChangingSourceOrToolExamples() {
+        val url = "https://example.com/sticker.png?token=AbC"
+        val raw = "[表情包:开心] $url"
+        val message = UIMessage.user(raw)
+        val markdown = buildMarkdownExport(request(listOf(message))) { it.url }
+        assertTrue(markdown.contains("![表情](<$url>)"))
+        assertEquals(raw, (message.parts.single() as UIMessagePart.Text).text)
+        val tool = UIMessage.assistant("").copy(parts = listOf(
+            UIMessagePart.Tool("id", "tool", "{}", listOf(UIMessagePart.Text(raw))),
+        ))
+        assertTrue(buildMarkdownExport(request(listOf(tool))) { it.url }.contains(raw))
+    }
+
+    @Test
     fun sameModelMessagesKeepDistinctSenderNames() {
         val modelId = Uuid.random()
         val first = UIMessage.assistant("甲的回复").copy(modelId = modelId)

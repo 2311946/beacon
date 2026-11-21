@@ -16,6 +16,7 @@ import java.util.UUID
 data class Sticker(
     val id: String,
     val url: String,
+    val name: String = "",
 )
 
 @Serializable
@@ -24,6 +25,16 @@ data class StickerGroup(
     val name: String,
     val stickers: List<Sticker>,
 )
+
+/** 名称用于消息标记，避免换行和闭合括号破坏格式；不推断图片含义。 */
+internal fun normalizeStickerName(name: String): String = name
+    .replace(Regex("[\\r\\n\\[\\]【】]"), " ")
+    .trim()
+    .replace(Regex("\\s+"), " ")
+    .take(80)
+
+internal fun stickerMessageText(url: String, name: String): String =
+    "[表情包:${normalizeStickerName(name).ifBlank { "未命名" }}] $url"
 
 enum class StickerDisplaySize(val label: String, val widthFraction: Float, val maxHeightDp: Int) {
     SMALL("小", 0.35f, 100),
@@ -163,8 +174,8 @@ class StickerStore private constructor(context: Context) {
         return group
     }
 
-    fun addSticker(groupId: String, url: String): Sticker {
-        val sticker = Sticker(UUID.randomUUID().toString(), validateUrl(url))
+    fun addSticker(groupId: String, url: String, name: String = ""): Sticker {
+        val sticker = Sticker(UUID.randomUUID().toString(), validateUrl(url), normalizeStickerName(name))
         update { latest ->
             require(latest.any { it.id == groupId }) { "分组已不存在，请重新选择" }
             latest.map { group ->
@@ -175,21 +186,44 @@ class StickerStore private constructor(context: Context) {
     }
 
     fun addStickers(groupId: String, urls: String): List<Sticker> {
-        val errors = mutableListOf<String>()
-        val validatedUrls = buildList {
-            urls.lineSequence().forEachIndexed { index, line ->
-                if (line.isNotBlank()) {
-                    try {
-                        add(validateUrl(line))
-                    } catch (exception: IllegalArgumentException) {
-                        errors.add("第 ${index + 1} 行：${exception.message}")
-                    }
-                }
+        var pendingName: String? = null
+        val httpScheme = Regex("https?://", RegexOption.IGNORE_CASE)
+        val stickers = urls.lineSequence().mapNotNull { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return@mapNotNull null
+            if (!httpScheme.containsMatchIn(trimmed)) {
+                // 空行不打断配对；连续文本只保留最近一行，去掉名称末尾的中英文冒号。
+                pendingName = trimmed.trimEnd(':', '：').trim()
+                return@mapNotNull null
             }
-        }
-        require(errors.isEmpty()) { errors.joinToString("\n") }
-        require(validatedUrls.isNotEmpty()) { "请至少输入一个 HTTP 或 HTTPS 图片地址" }
-        val stickers = validatedUrls.map { Sticker(UUID.randomUUID().toString(), it) }
+            val previousName = pendingName.orEmpty()
+            // URL 行无论是否有效都消费候选名称，避免无效地址把名称串给后续图片。
+            pendingName = null
+            // 优先识别整行 URL，避免拆开 scheme、端口以及路径/查询参数中的冒号。
+            val plainUrl = try {
+                validateUrl(trimmed)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+            if (plainUrl != null) {
+                return@mapNotNull Sticker(
+                    UUID.randomUUID().toString(), plainUrl, normalizeStickerName(previousName),
+                )
+            }
+            val separator = trimmed.indexOfFirst { it == ':' || it == '：' }
+            if (separator < 0) return@mapNotNull null
+            val url = try {
+                validateUrl(trimmed.substring(separator + 1))
+            } catch (_: IllegalArgumentException) {
+                return@mapNotNull null
+            }
+            Sticker(
+                id = UUID.randomUUID().toString(),
+                url = url,
+                name = normalizeStickerName(trimmed.substring(0, separator)),
+            )
+        }.toList()
+        require(stickers.isNotEmpty()) { "请至少输入一个 HTTP 或 HTTPS 图片地址" }
         update { latest ->
             require(latest.any { it.id == groupId }) { "分组已不存在，请重新选择" }
             latest.map { group ->
@@ -197,6 +231,19 @@ class StickerStore private constructor(context: Context) {
             }
         }
         return stickers
+    }
+
+    fun renameSticker(groupId: String, stickerId: String, name: String) {
+        val normalized = normalizeStickerName(name)
+        update { latest ->
+            val group = requireNotNull(latest.find { it.id == groupId }) { "分组已不存在" }
+            require(group.stickers.any { it.id == stickerId }) { "表情已不存在" }
+            latest.map { current ->
+                if (current.id != groupId) current else current.copy(stickers = current.stickers.map {
+                    if (it.id == stickerId) it.copy(name = normalized) else it
+                })
+            }
+        }
     }
 
     fun removeSticker(groupId: String, stickerId: String) {

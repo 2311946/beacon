@@ -401,7 +401,7 @@ fun ChatInput(
                     color = containerColor,
                 ) {
                     ChatStickerPanel(
-                        onSendSticker = state::insertSticker,
+                        onSendSticker = { url, name -> state.insertSticker(url, name) },
                         onManage = {
                             showStickers = false
                             onManageStickers()

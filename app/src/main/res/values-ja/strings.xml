@@ -1812,4 +1812,21 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="assistant_page_local_tools_phone_use_enable_service">ユーザー補助設定で\"RikkaHub Phone Use\"をオンにしてください</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">先にバックグラウンドのフローティングウィンドウを有効にしてください</string>
   <string name="phone_use_accessibility_description">Phone Useツールを有効にすると、AIアシスタントが画面を読み取り、タップ、スワイプ、テキスト入力を代行できるようになります。アシスタントがあなたの依頼したタスクを実行している場合にのみ動作し、それ以外は何も行われません。</string>
+  <string name="workspace_detail_storage_title">外部ストレージ</string>
+  <string name="workspace_detail_storage_desc">デバイスの共有ストレージからフォルダを同じパスでRootfsにマウントします。変更はデバイス上の実際のファイルに反映されます。変更後、開いているターミナルを再度開いて反映させてください。</string>
+  <string name="workspace_detail_storage_permission_missing">すべてのファイルへのアクセスが許可されていません</string>
+  <string name="workspace_detail_storage_permission_missing_desc">タップしてシステム設定で許可してください。許可しない場合、マウントされたフォルダの読み書きができません。</string>
+  <string name="workspace_detail_storage_writable">AIの書き込みは承認をスキップ</string>
+  <string name="workspace_detail_storage_needs_approval">AIの書き込みには承認が必要</string>
+  <string name="workspace_detail_storage_writable_desc">オフの場合、AIがファイルツールでこのフォルダーに書き込む前に確認が必要です。読み取り専用のマウントではなく、ターミナルのコマンドは実際のファイルを変更または削除できます。</string>
+  <string name="workspace_detail_storage_add">フォルダを追加</string>
+  <string name="workspace_detail_storage_edit">フォルダを編集</string>
+  <string name="workspace_detail_storage_path">パス</string>
+  <string name="workspace_detail_storage_pick_folder">フォルダを選択</string>
+  <string name="workspace_detail_storage_pick_failed">このフォルダのパスを解決できませんでした。手動で入力してください。</string>
+  <string name="workspace_detail_storage_path_not_absolute">パスは絶対パスである必要があります</string>
+  <string name="workspace_detail_storage_path_outside">マウントできるのは /storage 配下のフォルダのみです（例: %1$s）</string>
+  <string name="workspace_detail_storage_path_unavailable">フォルダが存在しないか、すべてのファイルへのアクセスが許可されていません</string>
+  <string name="workspace_terminal_mounts_unavailable">マウントされたフォルダーを利用できません: %1$s。ワークスペース設定で修正するか削除してください。</string>
+  <string name="workspace_terminal_start_failed">ターミナルの起動に失敗しました</string>
 </resources>

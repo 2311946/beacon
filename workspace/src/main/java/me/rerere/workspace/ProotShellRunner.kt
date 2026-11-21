@@ -1,6 +1,7 @@
 package me.rerere.workspace
 
 import java.io.File
+import java.util.UUID
 
 data class WorkspaceBindMount(
     val source: File,
@@ -45,7 +46,10 @@ class ProotShellRunner(
 
         context.tempDir.mkdirs()
         patcher.patch(context.linuxDir)
-        val process = ProcessBuilder(buildCommand(context, proot))
+        val pidFile = File(context.linuxDir, "tmp/rikkahub/exec/${UUID.randomUUID()}.pid")
+        pidFile.parentFile?.mkdirs()
+        val guestPidPath = "/tmp/rikkahub/exec/${pidFile.name}"
+        val process = ProcessBuilder(buildCommand(context, proot, guestPidPath))
             .directory(context.filesDir)
             .redirectErrorStream(false)
             .apply {
@@ -60,7 +64,13 @@ class ProotShellRunner(
             }
             .start()
 
-        return process.readResult(context.timeoutMillis, context.stdin)
+        return try {
+            process.readResult(context.timeoutMillis, context.stdin) {
+                terminateProot(this, pidFile)
+            }
+        } finally {
+            pidFile.delete()
+        }
     }
 
     override fun terminalLaunch(context: WorkspaceTerminalContext): WorkspaceTerminalLaunch {
@@ -93,6 +103,7 @@ class ProotShellRunner(
     private fun buildCommand(
         context: WorkspaceShellContext,
         proot: File,
+        guestPidPath: String,
     ): List<String> {
         val command = mutableListOf(proot.absolutePath)
         command += prootArgs(context.linuxDir, context.filesDir, context.prootCwd(), context.bindMounts)
@@ -106,10 +117,11 @@ class ProotShellRunner(
             "-l",
             "-c",
             // 命令通过位置参数传入, 避免任何转义; eval "$2" 对命令文本只求值一次, 等价于 bash -c "$cmd"
-            "cd -- \"\$1\" && eval \"\$2\"",
+            "echo \"\$\$ \$PPID\" > \"\$3\"; cd -- \"\$1\" && eval \"\$2\"",
             "rikkahub",
             context.prootCwd(),
             context.command,
+            guestPidPath,
         )
         return command
     }

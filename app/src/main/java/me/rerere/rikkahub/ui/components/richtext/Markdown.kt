@@ -171,7 +171,13 @@ fun MarkdownBlock(
     val stickerContext = LocalContext.current
     val stickerStore = remember(stickerContext) { me.rerere.rikkahub.data.datastore.StickerStore.get(stickerContext) }
     val stickerGroups by stickerStore.groups.collectAsStateWithLifecycle()
-    val components = remember(enableLatexRendering, stickerGroups) {
+    val imageDisplay = remember(content, streaming, stickerStore) {
+        val normalized = me.rerere.rikkahub.data.model.StickerReplyResolver.normalizeMarkdownImages(content, streaming)
+        me.rerere.rikkahub.data.model.StickerReplyResolver.prepareLocalImagesForDisplay(normalized) { url ->
+            runCatching { stickerStore.isLocalImageForRequest(url) }.getOrDefault(false)
+        }
+    }
+    val components = remember(enableLatexRendering, stickerGroups, imageDisplay.urls) {
         MarkdownComponents(
             codeBlock = { block ->
                 HighlightCodeBlock(
@@ -182,15 +188,16 @@ fun MarkdownBlock(
                 )
             },
             image = { image, _ ->
-                if (me.rerere.rikkahub.data.datastore.isStickerImage(image.url, image.alt, stickerGroups)) {
+                val imageUrl = imageDisplay.urls[image.url] ?: image.url
+                if (me.rerere.rikkahub.data.datastore.isStickerImage(imageUrl, image.alt, stickerGroups)) {
                     ChatStickerImage(
-                        model = rememberWorkspaceImageUrl(image.url),
+                        model = rememberWorkspaceImageUrl(imageUrl),
                         contentDescription = image.alt,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)),
                     )
                 } else {
                     ZoomableAsyncImage(
-                        model = rememberWorkspaceImageUrl(image.url),
+                        model = rememberWorkspaceImageUrl(imageUrl),
                         contentDescription = image.alt,
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -222,11 +229,8 @@ fun MarkdownBlock(
         )
     }
 
-    val imageCompatibleContent = remember(content, streaming) {
-        me.rerere.rikkahub.data.model.StickerReplyResolver.normalizeMarkdownImages(content, streaming)
-    }
     MaterialMarkdown(
-        content = imageCompatibleContent,
+        content = imageDisplay.content,
         modifier = modifier.padding(horizontal = 4.dp),
         style = style,
         theme = theme,

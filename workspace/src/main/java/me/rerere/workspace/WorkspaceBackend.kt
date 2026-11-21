@@ -69,6 +69,8 @@ data class WorkspaceLayout(
     val workspaceDir: String,
     /** AI 写入时免强制审批的目录 */
     val writableRoots: List<String>,
+    /** AI 写入时需要审批的挂载目录，嵌套时以最长匹配目录为准 */
+    val approvalRoots: List<String> = emptyList(),
 ) {
     /** 存储区内的相对路径转成环境内的绝对路径 */
     fun absolutePath(area: WorkspaceStorageArea, path: String): String {
@@ -83,8 +85,30 @@ data class WorkspaceLayout(
     fun relativeToWorkspace(path: String): String =
         path.removePrefix("$workspaceDir/").removePrefix(workspaceDir)
 
+    /** 按最长匹配目录判断；深度相同时，需要审批的规则优先。 */
     fun isWritable(path: String): Boolean {
-        val normalized = path.trimEnd('/').ifBlank { "/" }
-        return writableRoots.any { root -> normalized == root || normalized.startsWith("$root/") }
+        val normalized = normalizeAbsolutePath(path) ?: return false
+        fun List<String>.deepestMatch(): Int? = mapNotNull(::normalizeAbsolutePath)
+            .filter { root -> normalized == root || root == "/" || normalized.startsWith("$root/") }
+            .maxOfOrNull { it.length }
+        val writable = writableRoots.deepestMatch() ?: return false
+        val approval = approvalRoots.deepestMatch() ?: return true
+        return writable > approval
+    }
+
+    private companion object {
+        // 消除 . 和 ..，越过根目录或非绝对路径不允许免审批。
+        fun normalizeAbsolutePath(path: String): String? {
+            if (!path.startsWith("/") || path.contains('\u0000')) return null
+            val segments = ArrayDeque<String>()
+            path.split('/').forEach { segment ->
+                when (segment) {
+                    "", "." -> Unit
+                    ".." -> segments.removeLastOrNull() ?: return null
+                    else -> segments.addLast(segment)
+                }
+            }
+            return segments.joinToString(separator = "/", prefix = "/")
+        }
     }
 }

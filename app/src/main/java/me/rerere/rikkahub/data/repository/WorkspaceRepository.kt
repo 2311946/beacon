@@ -14,6 +14,8 @@ import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.SshWorkspaceDraft
 import me.rerere.rikkahub.data.model.SshWorkspaceSettings
+import me.rerere.rikkahub.data.model.WorkspaceStorageMount
+import me.rerere.rikkahub.data.model.normalizeStorageMountPath
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.SecretCipher
 import me.rerere.workspace.RootfsInstallProgress
@@ -141,13 +143,7 @@ class WorkspaceRepository(
         require(!isNameTaken(finalName, excludeId = id)) {
             "Workspace name already exists: $finalName"
         }
-        dao.upsert(
-            workspace.copy(
-                name = finalName,
-                updatedAt = System.currentTimeMillis(),
-            )
-        )
-        return true
+        return dao.rename(id, finalName, System.currentTimeMillis()) > 0
     }
 
     /** 名字是否已被其他 workspace 占用（trim 后精确匹配，排除 [excludeId] 自身） */
@@ -160,16 +156,33 @@ class WorkspaceRepository(
         dao.setShellCompatibilityMode(id, enabled, System.currentTimeMillis())
     }
 
+    /**
+     * 保存规范化、去重后的挂载列表，仅影响后续命令和新终端。
+     * 新路径必须是可访问的目录；旧路径不重新检查，方便存储失效后编辑或删除。
+     */
+    suspend fun setStorageMounts(id: String, mounts: List<WorkspaceStorageMount>) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        require(workspace.capabilities().rootfs) { "Storage mounts are only available for local workspaces" }
+        val savedPaths = workspace.storageMountList().mapTo(HashSet()) { it.path }
+        val candidates = mounts.map { it.copy(path = normalizeStorageMountPath(it.path)) }
+        require(candidates.groupBy { it.path }.values.none { group -> group.map { it.writable }.distinct().size > 1 }) {
+            "Duplicate mount paths have conflicting AI write approval settings. Edit the existing mount instead."
+        }
+        val normalized = candidates.distinctBy { it.path }
+        withContext(Dispatchers.IO) {
+            normalized.filterNot { it.path in savedPaths }.forEach { mount ->
+                require(File(mount.path).isDirectory) {
+                    "Folder does not exist, or all files access is not granted: ${mount.path}"
+                }
+            }
+        }
+        dao.setStorageMounts(id, JsonInstant.encodeToString(normalized), System.currentTimeMillis())
+    }
+
     suspend fun setToolApproval(id: String, toolName: String, needsApproval: Boolean): Boolean {
         val workspace = dao.getById(id) ?: return false
         val overrides = workspace.toolApprovalOverrides() + (toolName to needsApproval)
-        dao.upsert(
-            workspace.copy(
-                toolApprovals = JsonInstant.encodeToString(overrides),
-                updatedAt = System.currentTimeMillis(),
-            )
-        )
-        return true
+        return dao.setToolApprovals(id, JsonInstant.encodeToString(overrides), System.currentTimeMillis()) > 0
     }
 
     suspend fun installRootfs(
@@ -210,7 +223,7 @@ class WorkspaceRepository(
         if (workspace.isSsh()) {
             workspace.sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir) }
         } else {
-            manager.layout
+            manager.layout(extraMounts = workspace.extraBindMounts())
         }
     }
 
@@ -383,7 +396,7 @@ class WorkspaceRepository(
             val settings = workspace.sshSettings() ?: error("SSH workspace config is missing: ${workspace.id}")
             SshWorkspaceBackend(sshPool, workspace.id, settings.toConnectionConfig())
         } else {
-            manager.backend(workspace.root, workspace.shellCompatibilityMode)
+            manager.backend(workspace.root, workspace.shellCompatibilityMode, extraMounts = workspace.extraBindMounts())
         }
 
     private fun SshWorkspaceSettings.toConnectionConfig() = SshConnectionConfig(

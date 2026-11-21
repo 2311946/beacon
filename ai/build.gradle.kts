@@ -8,6 +8,10 @@ plugins {
 android {
     namespace = "me.rerere.ai"
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
 //        externalNativeBuild {
 //            cmake {

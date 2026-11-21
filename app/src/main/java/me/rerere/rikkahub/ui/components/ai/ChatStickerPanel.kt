@@ -42,7 +42,7 @@ import me.rerere.rikkahub.data.datastore.StickerStore
 
 @Composable
 fun ChatStickerPanel(
-    onSendSticker: (String) -> Unit,
+    onSendSticker: (String, String) -> Unit,
     onManage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -85,7 +85,7 @@ fun ChatStickerPanel(
                             onClick = {
                                 sendError = null
                                 try {
-                                    onSendSticker(sticker.url)
+                                    onSendSticker(sticker.url, sticker.name)
                                 } catch (exception: CancellationException) {
                                     throw exception
                                 } catch (exception: Exception) {
@@ -157,7 +157,7 @@ internal fun StickerThumbnail(
         Box(contentAlignment = Alignment.Center) {
             AsyncImage(
                 model = sticker.url,
-                contentDescription = "表情：${sticker.url}",
+                contentDescription = "表情：${sticker.name.ifBlank { "未命名" }}",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().padding(4.dp),
                 onLoading = {

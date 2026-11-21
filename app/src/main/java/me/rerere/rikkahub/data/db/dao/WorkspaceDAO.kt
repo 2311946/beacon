@@ -27,6 +27,15 @@ interface WorkspaceDAO {
     @Query("UPDATE workspaces SET shell_compatibility_mode = :enabled, updated_at = :updatedAt WHERE id = :id")
     suspend fun setShellCompatibilityMode(id: String, enabled: Boolean, updatedAt: Long): Int
 
+    @Query("UPDATE workspaces SET storage_mounts = :storageMounts, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setStorageMounts(id: String, storageMounts: String, updatedAt: Long): Int
+
+    @Query("UPDATE workspaces SET name = :name, updated_at = :updatedAt WHERE id = :id")
+    suspend fun rename(id: String, name: String, updatedAt: Long): Int
+
+    @Query("UPDATE workspaces SET tool_approvals = :toolApprovals, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setToolApprovals(id: String, toolApprovals: String, updatedAt: Long): Int
+
     @Query("DELETE FROM workspaces WHERE id = :id")
     suspend fun deleteById(id: String): Int
 }

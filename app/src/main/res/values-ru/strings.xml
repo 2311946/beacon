@@ -1812,4 +1812,21 @@
   <string name="assistant_page_local_tools_phone_use_enable_service">Включите \"RikkaHub Phone Use\" в настройках специальных возможностей</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">Сначала включите фоновое плавающее окно</string>
   <string name="phone_use_accessibility_description">Позволяет ИИ-ассистенту читать экран и выполнять за вас нажатия, свайпы и ввод текста, когда вы включаете инструмент Phone Use. Ничего не выполняется, если ассистент не выполняет задачу, которую вы запросили.</string>
+  <string name="workspace_detail_storage_title">Внешнее хранилище</string>
+  <string name="workspace_detail_storage_desc">Монтируйте папки из общего хранилища устройства в Rootfs по тем же путям. Изменения затрагивают реальные файлы на устройстве. После изменений переоткройте открытые терминалы, чтобы изменения вступили в силу.</string>
+  <string name="workspace_detail_storage_permission_missing">Доступ ко всем файлам не предоставлен</string>
+  <string name="workspace_detail_storage_permission_missing_desc">Нажмите, чтобы предоставить разрешение в системных настройках. Без него нельзя читать или записывать подключённые папки.</string>
+  <string name="workspace_detail_storage_writable">ИИ записывает без подтверждения</string>
+  <string name="workspace_detail_storage_needs_approval">Запись ИИ требует одобрения</string>
+  <string name="workspace_detail_storage_writable_desc">Когда выключено, нужно подтверждать, прежде чем ИИ запишет в эту папку с помощью файловых инструментов. Это не режим только для чтения: команды терминала по-прежнему могут изменять или удалять реальные файлы.</string>
+  <string name="workspace_detail_storage_add">Добавить папку</string>
+  <string name="workspace_detail_storage_edit">Изменить папку</string>
+  <string name="workspace_detail_storage_path">Путь</string>
+  <string name="workspace_detail_storage_pick_folder">Выбрать папку</string>
+  <string name="workspace_detail_storage_pick_failed">Не удалось определить путь к этой папке. Введите его вручную.</string>
+  <string name="workspace_detail_storage_path_not_absolute">Путь должен быть абсолютным</string>
+  <string name="workspace_detail_storage_path_outside">Можно монтировать только папки в /storage, например %1$s</string>
+  <string name="workspace_detail_storage_path_unavailable">Папка не существует или не предоставлен доступ ко всем файлам</string>
+  <string name="workspace_terminal_mounts_unavailable">Смонтированные папки недоступны: %1$s. Исправьте или удалите их в настройках рабочей области.</string>
+  <string name="workspace_terminal_start_failed">Не удалось запустить терминал</string>
 </resources>

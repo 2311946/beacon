@@ -11,6 +11,26 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class ChatInputStateTest {
+    @Test
+    fun `named stickers travel with draft selection and message text`() {
+        val state = ChatInputState()
+        val url = "https://example.com/render?token=AbC&size=1"
+        state.setMessageText("前文旧内容后文")
+        state.textContent.edit { selection = androidx.compose.ui.text.TextRange(2, 5) }
+        state.insertSticker(url, "委屈")
+        assertEquals("前文\n[表情包:委屈] $url\n后文", state.textContent.text.toString())
+        assertEquals(listOf(UIMessagePart.Text(state.textContent.text.toString())), state.getContents())
+    }
+
+    @Test
+    fun `consecutive stickers keep separate URLs and unnamed legacy items remain usable`() {
+        val state = ChatInputState()
+        state.insertSticker("https://example.com/a.png", "开心")
+        state.insertSticker("https://example.com/b.gif")
+        assertEquals("[表情包:开心] https://example.com/a.png [表情包:未命名] https://example.com/b.gif ",
+            state.textContent.text.toString())
+    }
+
     private fun editing(parts: List<UIMessagePart>) = ChatInputState().apply {
         editingMessage = Uuid.random()
         setContents(parts)
