@@ -29,6 +29,7 @@ data class Assistant(
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
+    val memoryRetrievalTopK: Int = 6, // 每次最多召回的记忆条数，助手策略，不随查看的记忆库切换
     val autoConsolidateMemory: Boolean = true, // 对话停下来后在后台自动整理记忆; 关闭后只能手动整理
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
@@ -54,6 +55,8 @@ data class Assistant(
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val enableCalendar: Boolean = false, // 日历行程：仅开启的角色生成日程
 )
+
+fun normalizeMemoryRetrievalTopK(value: Int): Int = value.coerceIn(1, 20)
 
 @Serializable
 data class QuickMessage(

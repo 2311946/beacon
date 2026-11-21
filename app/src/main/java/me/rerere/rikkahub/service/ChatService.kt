@@ -1112,6 +1112,8 @@ class ChatService(
                 settings,
                 effectiveConversation,
                 chatContext = bridgeContext,
+                // 原始分支上的真实用户文本，不能把群成员改写后的 USER 当作查询。
+                memoryRecallQuery = me.rerere.rikkahub.data.ai.extractMemoryRecallQuery(history),
                 groupSystemPrompt = groupSystemPrompt,
                 isVoiceCallActive = {
                     replyCallId != null && activeVoiceCalls[conversationId] == replyCallId

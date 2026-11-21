@@ -12,6 +12,7 @@ import me.rerere.asr.ASRProviderSetting
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.normalizeMemoryRetrievalTopK
 import me.rerere.rikkahub.data.model.AssistantStatus
 import me.rerere.rikkahub.data.model.GroupChat
 import me.rerere.rikkahub.data.model.GroupChatDefaults
@@ -85,6 +86,55 @@ class SettingsFieldsTest {
         preferences.putSettings(turnedOff, persisted = restored)
         assertEquals(turnedOff.assistants, preferences.toSettings().assistants)
         assertEquals(disabled, preferences.toSettings().assistants.last())
+    }
+
+    @Test
+    fun `memory retrieval top k defaults to six for new and legacy assistants`() {
+        assertEquals(6, Assistant().memoryRetrievalTopK)
+        assertEquals(6, JsonInstant.decodeFromString<Assistant>("{}").memoryRetrievalTopK)
+        val legacy = JsonInstant.decodeFromString<Assistant>("""{"name":"已有助手","useGlobalMemory":true}""")
+        assertEquals(6, legacy.memoryRetrievalTopK)
+        assertEquals(true, legacy.useGlobalMemory)
+    }
+
+    @Test
+    fun `memory retrieval top k persists per assistant independently of memory library`() {
+        val personal = Assistant(name = "个人库助手", enableMemory = true, memoryRetrievalTopK = 3)
+        val global = Assistant(name = "全局库助手", useGlobalMemory = true, memoryRetrievalTopK = 12)
+        val selected = SAMPLE.copy(assistants = listOf(personal, global))
+        val preferences = mutablePreferencesOf().apply { putSettings(selected) }
+        val restored = preferences.toSettings()
+        assertEquals(selected.assistants, restored.assistants)
+        assertEquals(personal, JsonInstant.decodeFromString<Assistant>(JsonInstant.encodeToString(personal)))
+
+        val switched = restored.copy(assistants = listOf(
+            personal.copy(useGlobalMemory = true),
+            global.copy(useGlobalMemory = false),
+        ))
+        preferences.putSettings(switched, persisted = restored)
+        val switchedAssistants = preferences.toSettings().assistants
+        assertEquals(listOf(3, 12), switchedAssistants.map { it.memoryRetrievalTopK })
+        assertEquals(switched.assistants, switchedAssistants)
+
+        val updated = switched.copy(assistants = switchedAssistants.map {
+            if (it.id == personal.id) it.copy(memoryRetrievalTopK = 20) else it
+        })
+        preferences.putSettings(updated, persisted = switched)
+        assertEquals(updated.assistants, preferences.toSettings().assistants)
+        assertEquals(global.copy(useGlobalMemory = false), preferences.toSettings().assistants.last())
+    }
+
+    @Test
+    fun `memory retrieval top k input is normalized to one through twenty`() {
+        listOf(Int.MIN_VALUE, -1, 0).forEach { value ->
+            assertEquals(1, normalizeMemoryRetrievalTopK(value))
+        }
+        (1..20).forEach { value ->
+            assertEquals(value, normalizeMemoryRetrievalTopK(value))
+        }
+        listOf(21, 100, Int.MAX_VALUE).forEach { value ->
+            assertEquals(20, normalizeMemoryRetrievalTopK(value))
+        }
     }
 
     @OptIn(ExperimentalSerializationApi::class)

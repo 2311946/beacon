@@ -84,7 +84,7 @@ private fun String.toSingleLine(): String = replace(Regex("\\s+"), " ").trim()
 // 列表项开头的 [stated] 标记，保留前面的列表符号
 private val statedMarkerRegex = Regex("""(?m)^(\s*[-*+]\s+)\[stated\]\s*""", RegexOption.IGNORE_CASE)
 
-// 每次都全文注入的两个文件排在最前，其余目录按记忆格式约定的顺序
+// 管理列表与工具读取时将两个核心文件排在最前；自动召回仍按相关性选择片段。
 private val pinnedPathOrder = listOf(MemoryFile.PROFILE_PATH, MemoryFile.PREFERENCES_PATH)
 private val directoryOrder = listOf("/", "/topics", "/areas", "/people")
 

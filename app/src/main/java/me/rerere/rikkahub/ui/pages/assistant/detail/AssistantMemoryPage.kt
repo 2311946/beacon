@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,6 +57,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.groupByDirectory
 import me.rerere.rikkahub.data.model.memoryTitleOf
+import me.rerere.rikkahub.data.model.normalizeMemoryRetrievalTopK
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -183,6 +185,7 @@ fun AssistantMemoryPage(id: String) {
                     MemoryTab.SETTINGS -> MemorySettingsTab(
                         assistant = assistant,
                         onUpdateAssistant = { vm.update(it) },
+                        onUpdateMemoryRetrievalTopK = vm::updateMemoryRetrievalTopK,
                     )
                 }
             }
@@ -194,9 +197,51 @@ fun AssistantMemoryPage(id: String) {
 private fun MemorySettingsTab(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
+    onUpdateMemoryRetrievalTopK: (Int) -> Unit,
 ) {
+    val currentAssistant by rememberUpdatedState(assistant)
+    val currentOnUpdateTopK by rememberUpdatedState(onUpdateMemoryRetrievalTopK)
+    var showMemoryRetrievalTopKDialog by remember(assistant.id) { mutableStateOf(false) }
+    var memoryRetrievalTopKInput by remember(assistant.id) { mutableStateOf("") }
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
+
+    if (showMemoryRetrievalTopKDialog) {
+        val topK = memoryRetrievalTopKInput.trim().toIntOrNull()
+        AlertDialog(
+            onDismissRequest = { showMemoryRetrievalTopKDialog = false },
+            title = { Text("记忆召回条数（Top-K）") },
+            text = {
+                TextField(
+                    value = memoryRetrievalTopKInput,
+                    onValueChange = { memoryRetrievalTopKInput = it },
+                    label = { Text("每次最多召回的条数") },
+                    supportingText = { Text("范围 1–20，默认 6。超出范围的整数保存时会调整到范围内。") },
+                    isError = topK == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = topK != null,
+                    onClick = {
+                        topK?.let {
+                            currentOnUpdateTopK(normalizeMemoryRetrievalTopK(it))
+                        }
+                        showMemoryRetrievalTopKDialog = false
+                    },
+                ) {
+                    Text(stringResource(R.string.assistant_page_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMemoryRetrievalTopKDialog = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            },
+        )
+    }
 
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
@@ -267,6 +312,23 @@ private fun MemorySettingsTab(
                 enabled = assistant.enableMemory,
                 supportingContent = { Text(stringResource(R.string.assistant_page_global_memory_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_global_memory)) },
+            )
+            item(
+                headlineContent = { Text("记忆召回条数（Top-K）") },
+                supportingContent = {
+                    Text("每次最多注入多少个相关记忆片段，范围 1–20，默认 6；还受总长度限制。仅作用于当前助手，不随查看的个人库或全局库切换。")
+                },
+                trailingContent = {
+                    Text(
+                        text = "${normalizeMemoryRetrievalTopK(assistant.memoryRetrievalTopK)} 条",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                onClick = {
+                    memoryRetrievalTopKInput = normalizeMemoryRetrievalTopK(currentAssistant.memoryRetrievalTopK).toString()
+                    showMemoryRetrievalTopKDialog = true
+                },
             )
             switchItem(
                 checked = assistant.autoConsolidateMemory,

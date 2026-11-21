@@ -131,7 +131,7 @@ class ChatMemoryScopeTest {
     }
 
     @Test
-    fun `真实前缀缓存复用相同 ACTIVE 集合但内容删除与库切换使旧 request_context 失效`() {
+    fun `旧格式完整指纹仍可使旧 request_context 快照失效但新召回不使用此路径`() {
         val store = RenderedPrefixStore()
         val user = UIMessage.user("同一条历史消息")
         val source = listOf(user)

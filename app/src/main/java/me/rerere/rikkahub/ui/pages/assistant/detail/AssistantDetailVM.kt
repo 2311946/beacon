@@ -203,6 +203,19 @@ class AssistantDetailVM(
         }
     }
 
+    /** 只更新本字段，不能用对话框打开时的助手快照覆盖同期的其他设置。 */
+    fun updateMemoryRetrievalTopK(value: Int) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(assistants = settings.assistants.map { latest ->
+                    if (latest.id == assistantId) latest.copy(
+                        memoryRetrievalTopK = me.rerere.rikkahub.data.model.normalizeMemoryRetrievalTopK(value),
+                    ) else latest
+                })
+            }
+        }
+    }
+
     // 助手还没加载出来时 assistant 是个占位对象，记忆库要按页面拿到的 assistantId 来定位
     private fun memoryIdOf(assistant: Assistant, selection: Boolean? = selectedGlobalMemory.value) =
         if (selection ?: assistant.useGlobalMemory) {

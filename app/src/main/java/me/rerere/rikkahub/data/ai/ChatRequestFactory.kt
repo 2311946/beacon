@@ -19,7 +19,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.mediagen.provider.capabilities
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
+import me.rerere.rikkahub.data.ai.prompts.buildMemoryRecallInstructions
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -76,6 +76,8 @@ class ChatTurnContext(
     // 每次组装请求重新检查，挂断后不再追加；不修改持久化角色设定。
     val isVoiceCallActive: () -> Boolean = { false },
     val groupSystemPrompt: String = "",
+    val memoryRecallQuery: String = "",
+    val memoryRecallNowMillis: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
     // 本轮请求尾部的临时 USER；不写入历史，不受旧历史快照冻结。工具步骤/重试复用。
     val requestContextMessage: UIMessage = createTurnUserContext(currentTimePrompt, chatContext)
@@ -117,6 +119,7 @@ class ChatRequestFactory(
         chatContext: String = "",
         isVoiceCallActive: () -> Boolean = { false },
         groupSystemPrompt: String = "",
+        memoryRecallQuery: String = extractMemoryRecallQuery(conversation.currentMessages),
     ): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
         val assistant = settings.getAssistantOf(conversation)
@@ -132,6 +135,7 @@ class ChatRequestFactory(
             conversationId = conversation.id,
             chatContext = chatContext,
             groupSystemPrompt = groupSystemPrompt,
+            memoryRecallQuery = memoryRecallQuery,
             isVoiceCallActive = isVoiceCallActive,
             stickerPrompt = StickerReplyResolver.buildPrompt(StickerStore.get(context).groups.value),
             conversationSystemPrompt = conversation.customSystemPrompt,
@@ -222,7 +226,8 @@ class ChatRequestFactory(
         messages: List<UIMessage>,
         compressPrompt: String,
     ): String {
-        val (requestMessages, params) = buildStep(turn, messages)
+        // 摘要只记录原对话，不能把临时召回的旧记忆压成当前聊天的新事实。
+        val (requestMessages, params) = buildStep(turn, messages, includeMemoryRecall = false)
         // 压缩指令不经过输入转换器，模板转换器会把其中的花括号当成模板语法
         val result = withRetry(
             policy = turn.settings.retryPolicy(),
@@ -287,13 +292,16 @@ class ChatRequestFactory(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        includeMemoryRecall: Boolean = true,
     ): StepRequest {
         val assistant = turn.assistant
-        // 每个工具步骤/重试重新读取，避免本轮开始后已停用的记忆仍从旧快照发出。
-        val activeMemories = if (assistant.enableMemory) {
-            memoryRepository.getActiveFiles(turn.memoryNamespace).sortedBy { it.path }
+        // 每个新工具步骤重查 ACTIVE；同一步网络/空回复重试仍复用已构建的请求。
+        val memoryHits = if (assistant.enableMemory && includeMemoryRecall) {
+            memoryRepository.recallForChat(
+                turn.memoryNamespace, turn.memoryRecallQuery,
+                assistant.memoryRetrievalTopK, turn.memoryRecallNowMillis,
+            )
         } else emptyList()
-        val memoryFingerprint = memoryRequestFingerprint(turn.memoryNamespace, activeMemories)
         val voiceCallActive = turn.isVoiceCallActive()
         val requestMessages = buildList {
             val system = buildString {
@@ -314,7 +322,12 @@ class ChatRequestFactory(
                     append(turn.groupSystemPrompt)
                 }
 
-                // 可变化的记忆放入用户上下文，不再使 system 随后台记忆整理改变。
+                // 这里只放固定使用协议；动态正文在稳定历史之后，不随记忆更新改变 system。
+                if (assistant.enableMemory) {
+                    appendLine()
+                    appendLine()
+                    append(buildMemoryRecallInstructions())
+                }
                 if (turn.stickerPrompt.isNotBlank()) {
                     appendLine()
                     appendLine()
@@ -350,7 +363,6 @@ class ChatRequestFactory(
             }
             val history = me.rerere.rikkahub.data.ai.transformers.appendMessageDates(imageHistory)
             val dynamicContext = buildString {
-                if (assistant.enableMemory) appendLine(buildMemoryPrompt(activeMemories))
                 turn.tools.forEach { appendLine(it.systemPrompt(turn.model, messages)) }
             }
             addAll(me.rerere.rikkahub.data.ai.transformers.appendUserContext(history, dynamicContext))
@@ -387,12 +399,12 @@ class ChatRequestFactory(
             sessionId = turn.conversationId.toString(),
         )
         val configurationKey = listOf(
-            turn.assistant.toString(), turn.model.toString(), turn.conversationSystemPrompt.orEmpty(),
+            "memory-recall-tail-v1", memoryRecallPrefixIdentity(turn.assistant),
+            turn.model.toString(), turn.conversationSystemPrompt.orEmpty(),
             turn.settings.modeInjections.toString(), turn.settings.lorebooks.toString(),
             turn.settings.displaySetting.userNickname, turn.workspaceCwd.orEmpty(), turn.stickerPrompt,
             turn.settings.chatImageGeneration.toString(),
             voiceCallActive.toString(), turn.groupSystemPrompt,
-            turn.memoryNamespace, memoryFingerprint,
             turn.settings.mediaGenerationProviders.flatMap { provider ->
                 provider.models.filter { it.kind == me.rerere.mediagen.model.MediaKind.IMAGE && provider.capabilities(it.kind) != null }.map { it.id }
             }.toString(),
@@ -402,7 +414,7 @@ class ChatRequestFactory(
             messages.limitContext(assistant.contextMessageLimit), requestMessages,
         )
         // 在完整历史（含工具结果）之后追加，不插入工具调用与结果之间。
-        return StepRequest(stableMessages + turn.requestContextMessage, params)
+        return StepRequest(stableMessages + attachMemoryRecall(turn.requestContextMessage, memoryHits), params)
     }
 }
 
