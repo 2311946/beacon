@@ -130,6 +130,7 @@ fun GroupChatPage(
     val groupChat by vm.groupChat.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val chatService = org.koin.compose.koinInject<me.rerere.rikkahub.service.ChatService>()
     val memberActivities by vm.memberActivities.collectAsStateWithLifecycle()
     val isGenerating by vm.isGenerating.collectAsStateWithLifecycle()
     val isSummarizing by vm.isSummarizing.collectAsStateWithLifecycle()
@@ -540,6 +541,16 @@ fun GroupChatPage(
                                         },
                                         onDelete = { vm.deleteMessage(message) },
                                         onUpdate = { vm.selectNode(it.id, it.selectIndex) },
+                                        onToolApproval = { toolCallId, approved, reason ->
+                                            conversation?.id?.let { id ->
+                                                chatService.handleToolApproval(id, toolCallId, approved, reason)
+                                            }
+                                        },
+                                        onToolAnswer = { toolCallId, answer ->
+                                            conversation?.id?.let { id ->
+                                                chatService.handleToolApproval(id, toolCallId, approved = true, answer = answer)
+                                            }
+                                        },
                                         onToggleFavorite = null,
                                         onTranslate = null,
                                         showVoiceCallDetails = callRange != null,

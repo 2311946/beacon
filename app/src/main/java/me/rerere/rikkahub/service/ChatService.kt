@@ -882,19 +882,36 @@ class ChatService(
                 try {
                     afterPreviousGeneration(previousJob) {
                         ensureInitialized(session)
+                        val pendingMessage = session.state.value.currentMessages.singleOrNull { message ->
+                            message.getTools().any { it.toolCallId == toolCallId && it.isPending }
+                        } ?: return@afterPreviousGeneration
+                        val target = session.state.value.toolApprovalResumeTarget(
+                            pendingMessage.id,
+                            settingsStore.awaitLoaded().assistants.mapTo(mutableSetOf()) { it.id },
+                        )
                         val newApprovalState = when {
                             answer != null -> ToolApprovalState.Answered(answer)
                             approved -> ToolApprovalState.Approved
                             else -> ToolApprovalState.Denied(reason)
                         }
 
-                        val updated = session.tryUpdate { it.withToolApproval(toolCallId, newApprovalState) }
-                            ?: return@afterPreviousGeneration
+                        val updated = session.tryUpdate { latest ->
+                            val currentTarget = latest.toolApprovalResumeTarget(pendingMessage.id, setOf(target.assistantId))
+                            check(currentTarget.assistantId == target.assistantId) { "原工具调用的助手身份已变更" }
+                            latest.upsertMessage(
+                                currentTarget.nodeId,
+                                currentTarget.history.last().withPendingToolAssistant(target.assistantId),
+                            ).withToolApproval(toolCallId, newApprovalState)
+                        } ?: return@afterPreviousGeneration
                         session.flush()
 
                         // Only continue generation when all pending tools are handled
                         if (!updated.isAwaitingToolApproval) {
-                            runTurn(session)
+                            runTurn(
+                                session,
+                                speakerAssistantId = target.speakerAssistantId,
+                                resumeMessageId = pendingMessage.id,
+                            )
                         }
 
                         _generationDoneFlow.emit(conversationId)
@@ -924,6 +941,7 @@ class ChatService(
         runPostTurnTasks: Boolean = true,
         notifyCompletion: Boolean = true,
         voiceCallId: String? = null,
+        resumeMessageId: Uuid? = null,
     ): TurnResult {
         val conversationId = session.id
         // 先清理上一轮状态；确定历史后，仅为真正的续写恢复消息 ID。
@@ -944,8 +962,19 @@ class ChatService(
                 latest.copy(chatSuggestions = emptyList()).withoutUnresumableToolCalls(untilNode)
             }
 
+            if (speakerAssistantId == null) {
+                check(settings.assistants.any { it.id == conversation.assistantId }) {
+                    "原会话助手已被删除，已停止生成；不会自动切换为其他助手"
+                }
+            }
+            val resumeTarget = resumeMessageId?.let {
+                conversation.toolApprovalResumeTarget(it, settings.assistants.mapTo(mutableSetOf()) { assistant -> assistant.id })
+            }
+            check(resumeTarget == null || resumeTarget.speakerAssistantId == speakerAssistantId) { "原工具调用的角色已变更" }
             val nodes = conversation.messageNodes
-            val history = if (regenerateNodeId != null) {
+            val history = if (resumeTarget != null) {
+                resumeTarget.history
+            } else if (regenerateNodeId != null) {
                 val index = nodes.indexOfFirst { it.id == regenerateNodeId }
                 check(index != -1) { "Message node $regenerateNodeId not found" }
                 conversation.currentMessages.take(index)
@@ -1081,13 +1110,11 @@ class ChatService(
                 }
             } else ""
 
-            val replyNodeId = conversation.replyNodeForTurn(regenerateNodeId, speakerAssistantId)
-            // 只有普通单聊续写才关联历史末条回复；群聊新发言/重新生成等待自己的首次输出。
+            val replyNodeId = resumeTarget?.nodeId ?: conversation.replyNodeForTurn(regenerateNodeId, speakerAssistantId)
+            val continueLastAssistantMessage = resumeTarget != null || (regenerateNodeId == null && speakerAssistantId == null)
+            // 审批恢复原消息；群聊新发言/重新生成等待自己的首次输出。
             session.replyMessageId.value = history.lastOrNull()
-                ?.takeIf {
-                    regenerateNodeId == null && speakerAssistantId == null &&
-                        it.role == MessageRole.ASSISTANT
-                }?.id
+                ?.takeIf { continueLastAssistantMessage && it.role == MessageRole.ASSISTANT }?.id
 
             // 群聊：把会话临时指向本次发言的助手，模型、提示词、工具与记忆都按它来，
             // 会话自身记录的 assistantId 不变（群聊会话的归属仍然是第一个成员），只影响这一轮请求。
@@ -1096,14 +1123,7 @@ class ChatService(
                     val groupModelId = settings.groupChats.firstOrNull {
                         it.conversationId == conversationId
                     }?.chatModelId
-                    check(settings.assistants.any { it.id == speakerId }) {
-                        "原发言角色已不存在，已停止生成；不会自动切换为其他角色"
-                    }
-                    val memberConversation = conversation.copy(assistantId = speakerId, config = null)
-                    if (groupModelId != null) {
-                        val bound = memberConversation.bindConfig(settings)
-                        bound.copy(config = bound.config?.copy(chatModelId = groupModelId))
-                    } else memberConversation
+                    conversation.groupMemberRequestConversation(settings, speakerId, groupModelId)
                 }
                 ?: conversation
             // 来源随本轮固定：挂断后晚到的回复仍属于原通话，不能串到下一次通话。
@@ -1129,7 +1149,7 @@ class ChatService(
             var finishReason: AgentFinishReason? = null
             try {
                 val generationRequest = request.copy(
-                    continueLastAssistantMessage = regenerateNodeId == null && speakerAssistantId == null,
+                    continueLastAssistantMessage = continueLastAssistantMessage,
                 )
                 runAgent(generationRequest, hooks).flowOn(Dispatchers.IO).collect { event ->
                     when (event) {
@@ -1137,8 +1157,9 @@ class ChatService(
                             // 生成过程中只有网络重试的提示会留着，收到新内容说明重试已经成功
                             session.processingStatus.value = null
                             // 每次流式快照都合并，否则后续 chunk 会覆盖首个 chunk 的标记。
-                            val replyMessage = replyCallId?.let { event.message.withVoiceCallMetadata(it) }
-                                ?: event.message
+                            val approvalMessage = event.message.withPendingToolAssistant(turn.assistant.id)
+                            val replyMessage = replyCallId?.let { approvalMessage.withVoiceCallMetadata(it) }
+                                ?: approvalMessage
                             session.update {
                                 val updated = it.upsertMessage(replyNodeId, replyMessage)
                                 if (speakerAssistantId != null) {
@@ -1595,6 +1616,36 @@ class ChatService(
     }
 
     // ---- 聊天页配置 ----
+
+    /** 配置工具只同步发起调用的单聊快照；群聊共享模型和其他角色会话绝不改动。 */
+    suspend fun updateAssistantToolConversationModel(
+        conversationId: Uuid,
+        assistantId: Uuid,
+        modelId: Uuid,
+    ): String? = withLoadedSession(conversationId, createIfMissing = false) { session ->
+        val incarnation = session.incarnation
+        val settings = settingsStore.awaitLoaded()
+        val conversation = session.state.value
+        if (conversation.config?.isGroupChat == true || settings.groupChats.any { it.conversationId == conversationId }) {
+            return@withLoadedSession null
+        }
+        check(conversation.assistantId == assistantId) { "Assistant scope changed" }
+        check(settings.assistants.any { it.id == assistantId }) { "Assistant removed" }
+        val model = settings.providers.filter { it.enabled }.flatMap { it.models }.singleOrNull {
+            it.id == modelId && it.type == me.rerere.ai.provider.ModelType.CHAT && it.providerOverwrite?.enabled != false
+        } ?: error("Model unavailable")
+        val accepted = session.updateMetadata(
+            transform = { latest ->
+                check(latest.assistantId == assistantId && latest.config?.isGroupChat != true) { "Conversation scope changed" }
+                val config = latest.config ?: error("Conversation config unavailable")
+                latest.copy(config = config.withAssistantToolModel(model))
+            },
+            persist = conversationRepo::updateConversationConfig,
+            expectedIncarnation = incarnation,
+        )
+        check(accepted) { "Conversation replaced" }
+        null
+    }
 
     /**
      * 聊天页对助手的修改：会话持有的字段只改当前会话，其余写回助手设置。
