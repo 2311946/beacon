@@ -10,17 +10,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.MemoryEmbedder
+import me.rerere.rikkahub.data.ai.MemoryEmbeddingConnectionResult
+import me.rerere.rikkahub.data.ai.testMemoryEmbeddingConnection
 import me.rerere.rikkahub.data.ai.validEmbeddingEndpoint
 import me.rerere.rikkahub.data.model.MemoryEmbeddingSettings
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.switchItem
+import org.koin.compose.koinInject
 
 @Composable
 fun MemoryEmbeddingSettingsCard(
@@ -113,6 +120,17 @@ fun MemoryEmbeddingSettingsCard(
                 )
             }
         }
+        formItem(
+            headlineContent = { Text("测试当前连接") },
+            supportingContent = {
+                Text("使用当前未保存的 Endpoint、Key 和模型，仅发送“测试连接”。不会保存配置或建立记忆索引，可能产生少量 API 费用。")
+            },
+        ) {
+            // 修改连接字段时销毁旧请求作用域和结果；离开本页同样取消底层请求。
+            key(draft.endpoint, draft.apiKey, draft.model) {
+                MemoryEmbeddingConnectionTest(draft)
+            }
+        }
         item(
             trailingContent = {
                 Button(enabled = canSave, onClick = { onSave(draft) }) {
@@ -122,6 +140,45 @@ fun MemoryEmbeddingSettingsCard(
             headlineContent = { Text("保存当前草稿") },
             supportingContent = { Text("开关和输入项均需点击保存后才会生效，不会随每次输入触发索引。") },
         )
+    }
+}
+
+@Composable
+private fun MemoryEmbeddingConnectionTest(draft: MemoryEmbeddingSettings) {
+    val embedder = koinInject<MemoryEmbedder>()
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<MemoryEmbeddingConnectionResult?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            enabled = !testing && validEmbeddingEndpoint(draft.endpoint) && draft.model.isNotBlank(),
+            onClick = {
+                if (!testing) {
+                    testing = true
+                    result = null
+                    scope.launch {
+                        try {
+                            result = testMemoryEmbeddingConnection(embedder, draft)
+                        } finally {
+                            testing = false
+                        }
+                    }
+                }
+            },
+        ) {
+            Text(if (testing) "正在测试连接…" else "测试连接")
+        }
+        when (val current = result) {
+            is MemoryEmbeddingConnectionResult.Success -> Text(
+                text = "✅ 连接成功，向量维度: ${current.dimensions}",
+                color = MaterialTheme.colorScheme.primary,
+            )
+            is MemoryEmbeddingConnectionResult.Failure -> Text(
+                text = "连接失败：${current.message}",
+                color = MaterialTheme.colorScheme.error,
+            )
+            null -> Unit
+        }
     }
 }
 

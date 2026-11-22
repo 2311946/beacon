@@ -9,4 +9,6 @@
   <include
     domain="file"
     path="upload/" />
+  <exclude domain="sharedpref" path="github_backup.xml" />
+  <exclude domain="sharedpref" path="github_backup.xml.bak" />
 </full-backup-content>

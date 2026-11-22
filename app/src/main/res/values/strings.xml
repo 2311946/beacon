@@ -1840,4 +1840,5 @@
   <string name="workspace_detail_storage_path_unavailable">The folder does not exist, or all files access is not granted</string>
   <string name="workspace_terminal_mounts_unavailable">Mounted folders are unavailable: %1$s. Fix or remove them in the workspace settings.</string>
   <string name="workspace_terminal_start_failed">Failed to start the terminal</string>
+  <string name="backup_page_github_backup">GitHub</string>
 </resources>

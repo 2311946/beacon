@@ -344,6 +344,187 @@ class MemoryEmbeddingClientTest {
         }
     }
 
+    @Test
+    fun `连接测试使用禁用草稿的当前地址密钥模型并仅发送固定文本`() = runBlocking {
+        val requestBody = AtomicReference<String>()
+        val authorization = AtomicReference<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/custom/v1/embeddings") { exchange ->
+            exchange.use {
+                authorization.set(exchange.requestHeaders.getFirst("Authorization"))
+                requestBody.set(exchange.requestBody.readBytes().decodeToString())
+                val bytes = """{"data":[{"index":0,"embedding":[1,2,3]}]}""".toByteArray()
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.write(bytes)
+            }
+        }
+        server.start()
+        try {
+            val draft = MemoryEmbeddingSettings(
+                enabled = false,
+                endpoint = "http://127.0.0.1:${server.address.port}/custom/v1/embeddings",
+                apiKey = "unsaved-draft-key",
+                model = " unsaved-model ",
+                semanticWeight = Double.NaN,
+            )
+            val client = MemoryEmbeddingClient(OkHttpClient.Builder().proxy(Proxy.NO_PROXY).build())
+            assertEquals(MemoryEmbeddingConnectionResult.Success(3), testMemoryEmbeddingConnection(client, draft))
+            assertFalse(draft.enabled)
+            assertEquals("Bearer unsaved-draft-key", authorization.get())
+            val payload = Json.parseToJsonElement(requestBody.get()).jsonObject
+            assertEquals("unsaved-model", payload["model"]?.jsonPrimitive?.content)
+            assertEquals(listOf("测试连接"), payload["input"]?.jsonArray?.map { it.jsonPrimitive.content })
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `连接测试配置无效时不外发且错误不包含草稿内容`() = runBlocking {
+        val embedder = object : MemoryEmbedder {
+            override suspend fun embed(config: MemoryEmbeddingSettings, inputs: List<String>): List<FloatArray> =
+                error("不应产生请求")
+        }
+        val invalid = testMemoryEmbeddingConnection(
+            embedder,
+            MemoryEmbeddingSettings(endpoint = "https://secret.invalid/embeddings?key=private"),
+        ) as MemoryEmbeddingConnectionResult.Failure
+        assertTrue(invalid.message.contains("Endpoint 无效"))
+        assertFalse(invalid.message.contains("private"))
+        val emptyModel = testMemoryEmbeddingConnection(embedder, MemoryEmbeddingSettings(model = " "))
+        assertEquals(MemoryEmbeddingConnectionResult.Failure("模型不能为空"), emptyModel)
+    }
+
+    @Test
+    fun `HTTP诊断区分认证模型地址限流和服务错误且不显示服务端正文`() = runBlocking {
+        val status = AtomicInteger(401)
+        val body = AtomicReference("""{"error":{"code":"model_not_found","message":"private-key-and-input"}}""")
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/embeddings") { exchange ->
+            exchange.use {
+                exchange.requestBody.readBytes()
+                val bytes = body.get().toByteArray()
+                exchange.sendResponseHeaders(status.get(), bytes.size.toLong())
+                exchange.responseBody.write(bytes)
+            }
+        }
+        server.start()
+        try {
+            val client = MemoryEmbeddingClient(OkHttpClient.Builder().proxy(Proxy.NO_PROXY).build())
+            val draft = MemoryEmbeddingSettings(endpoint = "http://127.0.0.1:${server.address.port}/embeddings")
+            listOf(
+                401 to "API Key 错误",
+                403 to "访问被拒绝",
+                400 to "模型不存在",
+                404 to "模型不存在",
+                429 to "额度不足",
+                504 to "超时",
+                500 to "暂时不可用",
+                307 to "未跟随跳转",
+            ).forEach { (code, expected) ->
+                status.set(code)
+                val result = testMemoryEmbeddingConnection(client, draft) as MemoryEmbeddingConnectionResult.Failure
+                assertTrue(result.message, result.message.contains(expected))
+                assertTrue(result.message.contains("HTTP $code"))
+                assertFalse(result.message.contains("private-key-and-input"))
+                assertFalse(result.message.contains(draft.endpoint))
+            }
+            status.set(404)
+            body.set("""{"error":{"message":"model_not_found private-key-and-input"}}""")
+            val unknown = testMemoryEmbeddingConnection(client, draft) as MemoryEmbeddingConnectionResult.Failure
+            assertTrue(unknown.message.contains("接口地址或模型不存在"))
+            body.set(" ".repeat(16 * 1024 + 1))
+            val oversized = testMemoryEmbeddingConnection(client, draft) as MemoryEmbeddingConnectionResult.Failure
+            assertTrue(oversized.message.contains("HTTP 404"))
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `网络诊断按异常类型分类且不携带原异常信息`() {
+        listOf(
+            java.net.SocketTimeoutException("private") to "网络超时",
+            java.io.InterruptedIOException("private") to "网络超时",
+            java.net.UnknownHostException("private") to "域名解析失败",
+            java.net.ConnectException("private") to "无法连接服务器",
+            javax.net.ssl.SSLHandshakeException("private") to "TLS 连接失败",
+            java.io.IOException("private") to "网络请求失败",
+        ).forEach { (raw, expected) ->
+            val safe = embeddingNetworkError(raw)
+            assertTrue(safe.message!!, safe.message!!.contains(expected))
+            assertFalse(safe.toString().contains("private"))
+            assertNull(safe.cause)
+        }
+    }
+
+    @Test
+    fun `连接测试实际读取超时返回明确提示`() = runBlocking {
+        val release = CountDownLatch(1)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/embeddings") { exchange ->
+            exchange.requestBody.readBytes()
+            release.await()
+            exchange.close()
+        }
+        server.start()
+        try {
+            val base = OkHttpClient.Builder().proxy(Proxy.NO_PROXY)
+                .readTimeout(100, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+            val draft = MemoryEmbeddingSettings(endpoint = "http://127.0.0.1:${server.address.port}/embeddings")
+            val result = testMemoryEmbeddingConnection(MemoryEmbeddingClient(base), draft)
+                as MemoryEmbeddingConnectionResult.Failure
+            assertTrue(result.message, result.message.contains("网络超时"))
+        } finally {
+            release.countDown()
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `连接测试取消不会转成失败且会取消底层请求`() = runBlocking {
+        val release = CountDownLatch(1)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/embeddings") { exchange ->
+            release.await()
+            exchange.close()
+        }
+        server.start()
+        try {
+            val dispatcher = okhttp3.Dispatcher()
+            val client = MemoryEmbeddingClient(OkHttpClient.Builder().dispatcher(dispatcher).proxy(Proxy.NO_PROXY).build())
+            val pending = async(start = CoroutineStart.UNDISPATCHED) {
+                testMemoryEmbeddingConnection(
+                    client,
+                    MemoryEmbeddingSettings(endpoint = "http://127.0.0.1:${server.address.port}/embeddings"),
+                )
+            }
+            val call = (dispatcher.runningCalls() + dispatcher.queuedCalls()).single()
+            pending.cancelAndJoin()
+            assertTrue(pending.isCancelled)
+            assertTrue(call.isCanceled())
+        } finally {
+            release.countDown()
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `连接测试不向UI暴露未知异常或非法向量`() = runBlocking {
+        for (vectors in listOf(emptyList(), listOf(floatArrayOf(0f)), listOf(floatArrayOf(Float.NaN)))) {
+            val fake = object : MemoryEmbedder {
+                override suspend fun embed(config: MemoryEmbeddingSettings, inputs: List<String>) = vectors
+            }
+            assertTrue(testMemoryEmbeddingConnection(fake, MemoryEmbeddingSettings()) is MemoryEmbeddingConnectionResult.Failure)
+        }
+        val fake = object : MemoryEmbedder {
+            override suspend fun embed(config: MemoryEmbeddingSettings, inputs: List<String>): List<FloatArray> =
+                throw java.io.IOException("private-api-key-and-response")
+        }
+        val result = testMemoryEmbeddingConnection(fake, MemoryEmbeddingSettings()) as MemoryEmbeddingConnectionResult.Failure
+        assertFalse(result.message.contains("private"))
+    }
+
     private fun parse(body: String, count: Int = 1): List<FloatArray> =
         parseEmbeddingResponse(body.toByteArray(Charsets.UTF_8), count)
 

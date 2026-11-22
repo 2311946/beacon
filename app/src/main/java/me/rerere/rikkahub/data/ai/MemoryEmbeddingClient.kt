@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -91,7 +92,7 @@ internal class MemoryEmbeddingClient(
             enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     if (continuation.isActive) {
-                        continuation.resumeWithException(IOException("记忆嵌入请求失败"))
+                        continuation.resumeWithException(embeddingNetworkError(e))
                     }
                 }
 
@@ -99,32 +100,45 @@ internal class MemoryEmbeddingClient(
                     try {
                         val result = response.use { checkedResponse ->
                             if (checkedResponse.code != 200) {
-                                throw IllegalStateException("记忆嵌入请求失败：HTTP ${checkedResponse.code}")
+                                val errorBody = if (checkedResponse.code == 400 || checkedResponse.code == 404) {
+                                    runCatching {
+                                        readLimited(checkedResponse.body.byteStream(), 16 * 1024)
+                                    }.getOrNull()
+                                } else null
+                                throw embeddingHttpError(checkedResponse.code, errorBody)
                             }
-                            val body = checkedResponse.body ?: throw IllegalStateException("记忆嵌入响应为空")
+                            val body = checkedResponse.body
                             require(body.contentLength() <= MAX_EMBEDDING_RESPONSE_BYTES)
                             parseEmbeddingResponse(readLimited(body.byteStream()), expectedCount)
                         }
                         if (continuation.isActive) continuation.resume(result)
-                    } catch (_: Exception) {
+                    } catch (error: Exception) {
                         if (continuation.isActive) {
-                            continuation.resumeWithException(IOException("记忆嵌入响应无效"))
+                            val safeError = when (error) {
+                                is MemoryEmbeddingException -> error
+                                is IOException -> embeddingNetworkError(error)
+                                else -> MemoryEmbeddingException("记忆嵌入响应无效：未返回合法向量")
+                            }
+                            continuation.resumeWithException(safeError)
                         }
                     }
                 }
             })
         }
 
-    private fun readLimited(input: java.io.InputStream): ByteArray {
+    private fun readLimited(
+        input: java.io.InputStream,
+        limit: Int = MAX_EMBEDDING_RESPONSE_BYTES,
+    ): ByteArray {
         input.use { stream ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(8192)
             var total = 0
             while (true) {
-                val read = stream.read(buffer, 0, minOf(buffer.size, MAX_EMBEDDING_RESPONSE_BYTES - total + 1))
+                val read = stream.read(buffer, 0, minOf(buffer.size, limit - total + 1))
                 if (read < 0) break
                 total += read
-                if (total > MAX_EMBEDDING_RESPONSE_BYTES) throw IllegalStateException("记忆嵌入响应过大")
+                if (total > limit) throw IllegalStateException("记忆嵌入响应过大")
                 output.write(buffer, 0, read)
             }
             return output.toByteArray()
@@ -133,6 +147,76 @@ internal class MemoryEmbeddingClient(
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
+    }
+}
+
+// 仅携带本地生成的诊断，不保留服务端正文、URL、密钥或原始异常链。
+internal class MemoryEmbeddingException(message: String) : IOException(message)
+
+internal fun embeddingNetworkError(error: IOException): MemoryEmbeddingException =
+    MemoryEmbeddingException(
+        when (error) {
+            is java.net.SocketTimeoutException, is java.io.InterruptedIOException -> "网络超时，请检查网络或稍后重试"
+            is java.net.UnknownHostException -> "域名解析失败，请检查 Endpoint 和网络"
+            is java.net.ConnectException -> "无法连接服务器，请检查地址、端口和网络"
+            is javax.net.ssl.SSLException -> "TLS 连接失败，请检查服务器证书和 HTTPS 配置"
+            else -> "网络请求失败，请检查网络、代理和 Endpoint"
+        }
+    )
+
+internal fun embeddingHttpError(status: Int, body: ByteArray?): MemoryEmbeddingException {
+    // 只识别标准错误代码白名单，不显示 message（可能包含密钥或输入文本）。
+    val modelMissing = if (status == 400 || status == 404) {
+        runCatching {
+            val root = body?.let { Json.parseToJsonElement(it.decodeToString()) } as? JsonObject
+            val error = root?.get("error") as? JsonObject
+            listOf("code", "type").any { field ->
+                val value = error?.get(field) as? JsonPrimitive
+                value?.isString == true && value.content in setOf("model_not_found", "invalid_model", "model_not_exist")
+            }
+        }.getOrDefault(false)
+    } else false
+    val reason = when {
+        modelMissing -> "模型不存在或当前 API Key 无权使用该模型"
+        status == 401 -> "API Key 错误或已失效"
+        status == 403 -> "访问被拒绝，请检查 API Key 权限或服务商限制"
+        status == 404 -> "接口地址或模型不存在，请检查 Endpoint 和模型名称"
+        status == 400 || status == 422 -> "请求参数无效，请检查模型名称和 Embedding 接口兼容性"
+        status == 408 || status == 504 -> "服务端请求超时，请稍后重试"
+        status == 429 -> "请求受限或额度不足，请检查服务商配额"
+        status in 300..399 -> "服务器返回重定向；为保护密钥，未跟随跳转，请填写最终接口地址"
+        status in 500..599 -> "Embedding 服务暂时不可用，请稍后重试"
+        else -> "Embedding 请求失败"
+    }
+    return MemoryEmbeddingException("$reason（HTTP $status）")
+}
+
+internal sealed interface MemoryEmbeddingConnectionResult {
+    data class Success(val dimensions: Int) : MemoryEmbeddingConnectionResult
+    data class Failure(val message: String) : MemoryEmbeddingConnectionResult
+}
+
+internal suspend fun testMemoryEmbeddingConnection(
+    embedder: MemoryEmbedder,
+    draft: MemoryEmbeddingSettings,
+): MemoryEmbeddingConnectionResult {
+    if (!validEmbeddingEndpoint(draft.endpoint)) {
+        return MemoryEmbeddingConnectionResult.Failure("Endpoint 无效，请填写完整的 HTTPS /embeddings 地址或本地 HTTP 地址")
+    }
+    if (draft.model.isBlank()) return MemoryEmbeddingConnectionResult.Failure("模型不能为空")
+    return try {
+        // 只为本次显式测试启用请求，不保存设置、不访问记忆库、不触发后台索引。
+        val vector = embedder.embed(draft.copy(enabled = true), listOf("测试连接")).single()
+        validateVector(vector)
+        MemoryEmbeddingConnectionResult.Success(vector.size)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: MemoryEmbeddingException) {
+        MemoryEmbeddingConnectionResult.Failure(error.message ?: "Embedding 连接测试失败")
+    } catch (_: IllegalArgumentException) {
+        MemoryEmbeddingConnectionResult.Failure("请求配置或响应向量无效，请检查 Endpoint、API Key 和模型")
+    } catch (_: Exception) {
+        MemoryEmbeddingConnectionResult.Failure("连接测试失败：未收到合法向量，请检查接口兼容性")
     }
 }
 

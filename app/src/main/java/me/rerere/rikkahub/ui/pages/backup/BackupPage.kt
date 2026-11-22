@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +50,7 @@ private enum class BackupTab(
     LOCAL(HugeIcons.SmartPhone01, R.string.backup_page_import_export),
     WEBDAV(HugeIcons.CloudServer, R.string.backup_page_webdav_backup),
     S3(HugeIcons.Bucket, R.string.backup_page_s3_backup),
+    GITHUB(HugeIcons.CloudServer, R.string.backup_page_github_backup),
     REMINDER(HugeIcons.Notification01, R.string.backup_page_reminder);
 
     override val label: String
@@ -58,6 +62,9 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
     val pagerState = rememberPagerState { BackupTab.entries.size }
     var showRestartDialog by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val githubBusy by vm.githubBusy.collectAsStateWithLifecycle()
+    val githubConnecting by vm.githubConnecting.collectAsStateWithLifecycle()
+    val githubRestoreReady by vm.githubRestoreReady.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -116,6 +123,10 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
                         )
                     }
 
+                    BackupTab.GITHUB -> {
+                        me.rerere.rikkahub.ui.pages.backup.tabs.GitHubTab(vm = vm)
+                    }
+
                     BackupTab.REMINDER -> {
                         ReminderTab(vm = vm)
                     }
@@ -124,7 +135,20 @@ fun BackupPage(vm: BackupVM = koinViewModel()) {
         }
     }
 
-    if (showRestartDialog) {
+    if (showRestartDialog || githubRestoreReady) {
         BackupDialog()
+    } else if (githubBusy && !githubConnecting) {
+        // 阻止暂存恢复期间离页，避免 pending 已发布但页面被销毁后遗漏重启提示。
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("正在处理 GitHub 备份") },
+            text = {
+                Column {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text("请等待操作完成。恢复确认后，校验及暂存阶段不会因离页而中断。")
+                }
+            },
+            confirmButton = {},
+        )
     }
 }

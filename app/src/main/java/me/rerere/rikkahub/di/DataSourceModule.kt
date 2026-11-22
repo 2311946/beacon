@@ -267,6 +267,9 @@ val dataSourceModule = module {
     }
 
     single { BackupManager(context = get(), database = get(), settingsStore = get(), json = get()) }
+    single { me.rerere.rikkahub.data.sync.github.GitHubBackupStore(get<Context>()) }
+    single { me.rerere.rikkahub.data.sync.github.GitHubReleaseClient() }
+    single { me.rerere.rikkahub.data.sync.github.GitHubSync(get(), get(), get()) }
 
     single {
         WebDavSync(
