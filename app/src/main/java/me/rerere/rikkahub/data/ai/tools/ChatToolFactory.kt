@@ -57,21 +57,23 @@ class ChatToolFactory(
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val tools = buildList {
-            add(createAssistantConfigTool(
-                assistantId = assistant.id,
-                initialSettings = settings,
-                conversation = conversation,
-                readSettings = settingsStore::awaitLoaded,
-                updateSettings = settingsStore::update,
-                syncWakeup = {
-                    me.rerere.rikkahub.service.ProactiveMessageScheduler.sync(
-                        context, settingsStore, source = "assistant-config-tool"
-                    )
-                },
-                syncConversationModel = { modelId ->
-                    lazyChatService.value.updateAssistantToolConversationModel(conversation.id, assistant.id, modelId)
-                },
-            ))
+            addAll(buildAssistantConfigTools(assistant) {
+                createAssistantConfigTool(
+                    assistantId = assistant.id,
+                    initialSettings = settings,
+                    conversation = conversation,
+                    readSettings = settingsStore::awaitLoaded,
+                    updateSettings = settingsStore::update,
+                    syncWakeup = {
+                        me.rerere.rikkahub.service.ProactiveMessageScheduler.sync(
+                            context, settingsStore, source = "assistant-config-tool"
+                        )
+                    },
+                    syncConversationModel = { modelId ->
+                        lazyChatService.value.updateAssistantToolConversationModel(conversation.id, assistant.id, modelId)
+                    },
+                )
+            })
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, settings.chatMemoryId(assistant, conversation)))
             }

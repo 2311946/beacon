@@ -135,7 +135,9 @@ class GroupChatVM(
         if (assistant.id != members().firstOrNull()?.id) return
         viewModelScope.launch {
             settingsStore.update { settings -> settings.copy(assistants = settings.assistants.map {
-                if (it.id == assistant.id) assistant else it
+                if (it.id == assistant.id) assistant.copy(
+                    allowAiModifySettings = it.allowAiModifySettings,
+                ) else it
             }) }
         }
     }

@@ -33,7 +33,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AssistantConfigToolTest {
-    private val target = Assistant(name = "目标角色", systemPrompt = "旧提示词", temperature = 0.5f, topP = 0.8f)
+    private val target = Assistant(
+        name = "目标角色", systemPrompt = "旧提示词", temperature = 0.5f, topP = 0.8f,
+        allowAiModifySettings = true,
+    )
     private val other = Assistant(name = "其他角色", systemPrompt = "其他角色提示词")
     private val model = Model(modelId = "chat-alpha", displayName = "Alpha")
     private val secondModel = Model(modelId = "chat-beta", displayName = "Beta")
@@ -132,6 +135,25 @@ class AssistantConfigToolTest {
     private fun modelInput(value: String) = buildJsonObject { put("model_id", value) }
 
     @Test
+    fun `关闭授权不构造或暴露工具 开启后提供且仍逐次审批`() {
+        val h = Harness()
+        var constructions = 0
+        fun tools(assistant: Assistant) = buildAssistantConfigTools(assistant) {
+            constructions++
+            h.tool
+        }
+        assertTrue(tools(Assistant()).isEmpty())
+        assertTrue(tools(target.copy(allowAiModifySettings = false)).isEmpty())
+        assertEquals(0, constructions)
+        val enabled = tools(target)
+        assertEquals(listOf("update_assistant_config"), enabled.map { it.name })
+        assertEquals(1, constructions)
+        assertTrue(enabled.single().needsApproval(buildJsonObject { put("temperature", 0.9) }))
+        assertTrue(tools(target.copy(allowAiModifySettings = false)).isEmpty())
+        assertEquals(1, constructions)
+    }
+
+    @Test
     fun `工具固定名称且所有输入均需审批 不暴露作用域输入`() {
         val h = Harness()
         assertEquals("update_assistant_config", h.tool.name)
@@ -186,6 +208,134 @@ class AssistantConfigToolTest {
             assertFalse(result.toString().contains(name))
             h.assertNoSideEffects()
         }
+    }
+
+    @Test
+    fun `默认未授权目标拒绝配置模型和唤醒且无副作用`() = runBlocking {
+        val disabled = Assistant(id = target.id, name = "默认未授权角色")
+        assertFalse(disabled.allowAiModifySettings)
+        val settings = initial.copy(assistants = listOf(disabled, other))
+        val h = Harness(settings)
+        val result = h.call(buildJsonObject {
+            put("model_id", model.id.toString())
+            put("temperature", 0.9)
+            put("system_prompt", "不应保存的提示词")
+            put("enable_memory", true)
+            put("wakeup", buildJsonObject { put("participating", true); put("global_enabled", true) })
+        })
+        assertEquals("error", result.text("status"))
+        assertTrue(result.changes().isEmpty())
+        assertSame(settings, h.settings)
+        assertEquals(1, h.reads)
+        assertEquals(0, h.updates)
+        assertTrue(h.events.isEmpty())
+        assertTrue(h.modelSyncs.isEmpty())
+        assertEquals(0, h.wakeupSyncs)
+    }
+
+    @Test
+    fun `工具创建时已授权但执行前关闭则拒绝且无副作用`() = runBlocking {
+        val h = Harness()
+        val revoked = initial.copy(assistants = listOf(target.copy(allowAiModifySettings = false), other))
+        h.settings = revoked
+        val result = h.call(buildJsonObject {
+            put("model_id", model.id.toString())
+            put("temperature", 0.9)
+            put("wakeup", buildJsonObject { put("participating", true); put("global_enabled", true) })
+        })
+        assertEquals("error", result.text("status"))
+        assertTrue(result.changes().isEmpty())
+        assertSame(revoked, h.settings)
+        assertEquals(1, h.reads)
+        assertEquals(0, h.updates)
+        assertTrue(h.events.isEmpty())
+        assertTrue(h.modelSyncs.isEmpty())
+        assertEquals(0, h.wakeupSyncs)
+    }
+
+    @Test
+    fun `预检通过后 beforeUpdate 撤权则最新闭包拒绝且不保存不同步`() = runBlocking {
+        val h = Harness()
+        val revoked = initial.copy(assistants = listOf(target.copy(allowAiModifySettings = false), other))
+        h.beforeUpdate = { h.settings = revoked }
+        val result = h.call(buildJsonObject {
+            put("model_id", model.id.toString())
+            put("temperature", 0.9)
+            put("wakeup", buildJsonObject { put("participating", true); put("global_enabled", true) })
+        })
+        assertEquals("error", result.text("status"))
+        assertTrue(result.changes().isEmpty())
+        assertSame(revoked, h.settings)
+        assertEquals(1, h.reads)
+        assertEquals(1, h.updates)
+        assertTrue(h.events.isEmpty())
+        assertTrue(h.modelSyncs.isEmpty())
+        assertEquals(0, h.wakeupSyncs)
+    }
+
+    @Test
+    fun `当前角色或群 owner 已授权也不能借给未授权目标`() = runBlocking {
+        listOf(false, true).forEach { group ->
+            val settings = initial.copy(assistants = listOf(
+                target.copy(allowAiModifySettings = false), other.copy(allowAiModifySettings = true),
+            ))
+            val h = Harness(settings, Conversation(
+                assistantId = other.id, messageNodes = emptyList(), config = ConversationConfig(isGroupChat = group),
+            ))
+            val result = h.call(buildJsonObject {
+                put("model_id", model.id.toString())
+                put("temperature", 0.9)
+                put("wakeup", buildJsonObject { put("participating", true); put("global_enabled", true) })
+            })
+            assertEquals("error", result.text("status"))
+            assertTrue(result.changes().isEmpty())
+            assertSame(settings, h.settings)
+            assertEquals(0, h.updates)
+            assertTrue(h.events.isEmpty())
+            assertTrue(h.modelSyncs.isEmpty())
+            assertEquals(0, h.wakeupSyncs)
+        }
+    }
+
+    @Test
+    fun `授权开关的两种命名都不在白名单且不能通过工具自我授权`() = runBlocking {
+        listOf("allowAiModifySettings", "allow_ai_modify_settings").forEach { name ->
+            listOf(false, true).forEach { authorized ->
+                listOf(false, true).forEach { requested ->
+                    val settings = initial.copy(assistants = listOf(target.copy(allowAiModifySettings = authorized), other))
+                    val h = Harness(settings)
+                    val result = h.call(buildJsonObject {
+                        put(name, requested)
+                        put("model_id", model.id.toString())
+                        put("temperature", 0.9)
+                        put("wakeup", buildJsonObject { put("global_enabled", true) })
+                    })
+                    assertEquals("error", result.text("status"))
+                    assertTrue(result.changes().isEmpty())
+                    assertSame(settings, h.settings)
+                    assertEquals(0, h.reads)
+                    assertEquals(0, h.updates)
+                    assertTrue(h.events.isEmpty())
+                    assertTrue(h.modelSyncs.isEmpty())
+                    assertEquals(0, h.wakeupSyncs)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `内部 patch 独立执行也拒绝未授权目标且不能借用其他角色授权`() {
+        val patch = AssistantConfigPatch.parse(buildJsonObject {
+            put("temperature", 0.9)
+            put("model_id", model.id.toString())
+            put("wakeup", buildJsonObject { put("participating", true); put("global_enabled", true) })
+        })
+        assertTrue(target.allowAiModifySettings)
+        assertFalse(other.allowAiModifySettings)
+        assertThrows(IllegalArgumentException::class.java) { patch.applyTo(initial, other.id) }
+        assertEquals(listOf(target, other), initial.assistants)
+        assertFalse(initial.autonomousWakeup.enabled)
+        assertEquals(setOf(other.id), initial.autonomousWakeup.assistantIds)
     }
 
     @Test
@@ -722,10 +872,12 @@ class AssistantConfigToolTest {
 
     @Test
     fun `不同工具实例角色范围互不影响 即使当前设置选中另一个角色`() = runBlocking {
-        var state = initial
+        val authorizedOther = other.copy(allowAiModifySettings = true)
+        val settings = initial.copy(assistants = listOf(target, authorizedOther))
+        var state = settings
         fun tool(id: kotlin.uuid.Uuid) = createAssistantConfigTool(
             assistantId = id,
-            initialSettings = initial,
+            initialSettings = settings,
             conversation = Conversation(assistantId = other.id, messageNodes = emptyList()),
             readSettings = { state },
             updateSettings = { transform -> state = transform(state) },
@@ -736,7 +888,7 @@ class AssistantConfigToolTest {
         val b = tool(other.id)
         a.execute(Json.parseToJsonElement("{\"temperature\":0.9}"))
         b.execute(Json.parseToJsonElement("{\"temperature\":1.2,\"wakeup\":{\"participating\":false}}"))
-        assertEquals(listOf(target.copy(temperature = 0.9f), other.copy(temperature = 1.2f)), state.assistants)
+        assertEquals(listOf(target.copy(temperature = 0.9f), authorizedOther.copy(temperature = 1.2f)), state.assistants)
         assertEquals(other.id, state.assistantId)
         assertTrue(state.autonomousWakeup.assistantIds.isEmpty())
     }

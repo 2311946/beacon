@@ -5,6 +5,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import okhttp3.OkHttpClient
@@ -30,6 +32,50 @@ class GoogleRequestMessageTest {
     @Before
     fun setUp() {
         provider = GoogleProvider(OkHttpClient())
+    }
+
+    @Test
+    fun `model list fixture falls back to model id and preserves model filtering and types`() {
+        val models = parseModelsFixture(
+            """
+            {
+              "models": [
+                {"name":"models/gemini-named","displayName":"Gemini Named","supportedGenerationMethods":["generateContent"]},
+                {"name":"models/gemini-missing","supportedGenerationMethods":["generateContent"]},
+                {"name":"models/embedding-null","displayName":null,"supportedGenerationMethods":["embedContent"]},
+                {"name":"models/gemini-blank","displayName":"  ","supportedGenerationMethods":["generateContent","embedContent"]},
+                {"name":"models/gemini-empty","displayName":"","supportedGenerationMethods":["generateContent"]},
+                {"name":"models/unsupported","supportedGenerationMethods":["countTokens"]}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf("gemini-named", "gemini-missing", "embedding-null", "gemini-blank", "gemini-empty"),
+            models.map { it.modelId },
+        )
+        assertEquals(
+            listOf("Gemini Named", "gemini-missing", "embedding-null", "gemini-blank", "gemini-empty"),
+            models.map { it.displayName },
+        )
+        assertEquals(
+            listOf(ModelType.CHAT, ModelType.CHAT, ModelType.EMBEDDING, ModelType.CHAT, ModelType.CHAT),
+            models.map { it.type },
+        )
+    }
+
+    @Test
+    fun `model list fixture without models returns an empty list`() {
+        assertTrue(parseModelsFixture("{}").isEmpty())
+        assertTrue(parseModelsFixture("""{"models":[]}""").isEmpty())
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseModelsFixture(body: String): List<Model> {
+        val method = GoogleProvider::class.java.getDeclaredMethod("parseModels", String::class.java)
+        method.isAccessible = true
+        return method.invoke(provider, body) as List<Model>
     }
 
     // Helper to invoke private buildContents method via reflection

@@ -8,6 +8,28 @@ import org.junit.Test
 class StringUtilsTest {
 
     @Test
+    fun `mime type uses the last extension despite hash spaces and unicode in the name`() {
+        listOf(
+            "附件#1.PNG",
+            "my attachment #1.png",
+            "/目录.with.dot/附件#1.PNG",
+            "archive.part#1.png",
+        ).forEach { name ->
+            assertEquals(name, "image/png", guessMimeTypeFromFileName(name))
+        }
+        assertEquals("text/plain", guessMimeTypeFromFileName("notes#1.TXT"))
+        assertEquals("application/pdf", guessMimeTypeFromFileName("附件#1.PDF"))
+    }
+
+    @Test
+    fun `mime type falls back for missing empty and unknown extensions`() {
+        listOf("附件#1", "attachment.", "/directory.png/attachment", "file.unknownextension", "file.###")
+            .forEach { name ->
+                assertEquals(name, "application/octet-stream", guessMimeTypeFromFileName(name))
+            }
+    }
+
+    @Test
     fun `extract chinese double quotes`() {
         assertEquals(listOf("你好"), "他说“你好”".extractQuotedContent())
     }

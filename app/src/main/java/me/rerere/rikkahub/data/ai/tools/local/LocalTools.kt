@@ -7,6 +7,7 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
+import me.rerere.rikkahub.phoneuse.isPhoneUseCheckedInSystem
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -39,6 +40,7 @@ class LocalTools(
         buildPhoneUseTool(
             ownPackageName = context.packageName,
             manager = phoneUseManager,
+            isCheckedInSystem = { isPhoneUseCheckedInSystem(context) },
             isFloatingWindowOn = { isFloatingChatWindowOn(context, settingsStore.settingsFlow.value) },
             saveScreenshot = { bytes ->
                 filesManager.createChatFilesByByteArrays(

@@ -21,6 +21,10 @@ import me.rerere.rikkahub.data.model.Conversation
 import java.math.BigDecimal
 import kotlin.uuid.Uuid
 
+/** 关闭时不创建或暴露配置工具，也不把它的提示词发送给模型。 */
+internal fun buildAssistantConfigTools(assistant: Assistant, createTool: () -> Tool): List<Tool> =
+    if (assistant.allowAiModifySettings) listOf(createTool()) else emptyList()
+
 private val configLabels = linkedMapOf(
     "model_id" to "模型",
     "temperature" to "温度",
@@ -53,6 +57,9 @@ internal class AssistantConfigPatch private constructor(private val fields: Json
         if (settings.init) rejectConfig("设置尚未加载，未修改配置。")
         val assistant = settings.assistants.singleOrNull { it.id == assistantId }
             ?: rejectConfig("目标角色已不存在或身份不唯一，未修改任何配置。")
+        if (!assistant.allowAiModifySettings) {
+            rejectConfig("当前角色未允许AI修改设置，未修改任何配置。")
+        }
         val modelId = if (requestsModel) resolveModel(settings, string("model_id")) else null
         val updated = assistant.copy(
             chatModelId = modelId ?: assistant.chatModelId,

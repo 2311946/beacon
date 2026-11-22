@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.datastore.withAssistantRemoved
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
@@ -21,6 +23,7 @@ class AssistantVM(
     private val memoryRepository: MemoryRepository,
     private val chatService: ChatService,
     private val filesManager: FilesManager,
+    private val appScope: AppScope,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, Settings.dummy())
@@ -38,14 +41,18 @@ class AssistantVM(
     }
 
     fun removeAssistant(assistant: Assistant) {
-        viewModelScope.launch {
-            cleanupAssistantFiles(assistant)
-
+        // 删除后的清理不能随页面关闭中断；先在最新设置上确认删除成功，再碰关联数据。
+        appScope.launch {
+            var removed: Assistant? = null
             settingsStore.update { settings ->
-                settings.copy(assistants = settings.assistants.filter { it.id != assistant.id })
+                val updated = settings.withAssistantRemoved(assistant.id)
+                if (updated !== settings) removed = settings.assistants.first { it.id == assistant.id }
+                updated
             }
-            memoryRepository.deleteFilesOfAssistant(assistant.id.toString())
-            chatService.deleteConversationsOfAssistant(assistant.id)
+            val deleted = removed ?: return@launch
+            chatService.deleteConversationsOfAssistant(deleted.id)
+            memoryRepository.deleteFilesOfAssistant(deleted.id.toString())
+            cleanupAssistantFiles(deleted)
         }
     }
 
@@ -65,6 +72,7 @@ class AssistantVM(
             val copiedAssistant = assistant.copy(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
+                allowAiModifySettings = false,
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
             )
             settingsStore.update { it.copy(assistants = it.assistants.plus(copiedAssistant)) }

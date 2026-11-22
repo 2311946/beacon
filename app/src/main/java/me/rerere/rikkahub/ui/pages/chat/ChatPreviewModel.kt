@@ -20,6 +20,8 @@ internal data class ChatPreviewRound(
     val entries: List<ChatPreviewEntry>,
     val favorite: Boolean,
 ) {
+    val checkpoint: Boolean get() = entries.singleOrNull()?.message?.isContextCheckpoint == true
+
     fun matches(query: String): Boolean = entries.any {
         it.text.contains(query, ignoreCase = true) || it.senderName.contains(query, ignoreCase = true)
     }
@@ -30,7 +32,10 @@ internal fun List<MessageNode>.toChatPreviewRounds(senderNames: Map<Uuid, String
     val groups = mutableListOf<MutableList<IndexedValue<MessageNode>>>()
     forEachIndexed { index, node ->
         // 原始 USER 角色仍是回合边界，但其展示身份由安全投影决定。
-        if (node.currentMessage.role == MessageRole.USER || groups.isEmpty()) groups.add(mutableListOf())
+        val afterCheckpoint = groups.lastOrNull()?.lastOrNull()?.value?.currentMessage?.isContextCheckpoint == true
+        if (node.currentMessage.role == MessageRole.USER || node.currentMessage.isContextCheckpoint ||
+            groups.isEmpty() || afterCheckpoint
+        ) groups.add(mutableListOf())
         groups.last().add(IndexedValue(index, node))
     }
     return groups.map { group ->

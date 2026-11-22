@@ -1,10 +1,22 @@
 package me.rerere.rikkahub.data.datastore
 
+import kotlin.uuid.Uuid
+
+/** 删除入口也检查最新列表，避免过期页面或连续点击删掉最后一个助手。 */
+internal fun Settings.withAssistantRemoved(id: Uuid): Settings {
+    val remaining = assistants.filterNot { it.id == id }
+    if (remaining.isEmpty() || remaining.size == assistants.size) return this
+    return copy(
+        assistants = remaining,
+        assistantId = if (assistantId == id) remaining.first().id else assistantId,
+    )
+}
+
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
     withBuiltInDefaults().withoutInvalidReferences().withValuesInRange()
 
-// 补齐缺失的内置提供商/助手/TTS，内置提供商的描述信息始终以代码里的为准
+// 补齐内置提供商/TTS；助手仅在列表为空时回退默认值，允许删除单个内置助手。
 internal fun Settings.withBuiltInDefaults(): Settings {
     var providers = this.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
     DEFAULT_PROVIDERS.forEach { defaultProvider ->
@@ -23,11 +35,6 @@ internal fun Settings.withBuiltInDefaults(): Settings {
         } else provider
     }.toMutableList()
     val assistants = this.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
-    DEFAULT_ASSISTANTS.forEach { defaultAssistant ->
-        if (assistants.none { it.id == defaultAssistant.id }) {
-            assistants.add(defaultAssistant.copy())
-        }
-    }
     val ttsProviders = this.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
     DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
         if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
@@ -54,6 +61,8 @@ internal fun Settings.withoutInvalidReferences(): Settings {
         providers = settings.providers.distinctBy { it.id }.map { provider ->
             provider.copyProvider(models = provider.models.distinctBy { model -> model.id })
         },
+        assistantId = settings.assistantId.takeIf { id -> settings.assistants.any { it.id == id } }
+            ?: settings.assistants.first().id,
         assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
             assistant.copy(
                 // 过滤掉不存在的 MCP 服务器 ID

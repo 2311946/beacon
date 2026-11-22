@@ -151,30 +151,37 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: error("empty body")
                 Log.d(TAG, "listModels: $body")
-                val bodyObject = json.parseToJsonElement(body).jsonObject
-                val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
-
-                models.mapNotNull {
-                    val modelObject = it.jsonObject
-
-                    // 忽略非chat/embedding模型
-                    val supportedGenerationMethods =
-                        modelObject["supportedGenerationMethods"]!!.jsonArray
-                            .map { method -> method.jsonPrimitive.content }
-                    if ("generateContent" !in supportedGenerationMethods && "embedContent" !in supportedGenerationMethods) {
-                        return@mapNotNull null
-                    }
-
-                    Model(
-                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
-                        displayName = modelObject["displayName"]!!.jsonPrimitive.content,
-                        type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
-                    )
-                }
+                parseModels(body)
             } else {
                 emptyList()
             }
         }
+
+    private fun parseModels(body: String): List<Model> {
+        val bodyObject = json.parseToJsonElement(body).jsonObject
+        val models = bodyObject["models"]?.jsonArray ?: return emptyList()
+
+        return models.mapNotNull {
+            val modelObject = it.jsonObject
+
+            // 忽略非chat/embedding模型
+            val supportedGenerationMethods =
+                modelObject["supportedGenerationMethods"]!!.jsonArray
+                    .map { method -> method.jsonPrimitive.content }
+            if ("generateContent" !in supportedGenerationMethods && "embedContent" !in supportedGenerationMethods) {
+                return@mapNotNull null
+            }
+
+            val modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
+            Model(
+                modelId = modelId,
+                // 部分兼容接口不返回 displayName，回退到 modelId
+                displayName = modelObject["displayName"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?.takeIf { it.isNotBlank() } ?: modelId,
+                type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
+            )
+        }
+    }
 
     override suspend fun generateText(
         providerSetting: ProviderSetting.Google,

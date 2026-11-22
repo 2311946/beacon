@@ -16,6 +16,41 @@ import kotlin.uuid.Uuid
 
 class GroupChatRecordTest {
     @Test
+    fun checkpointIsSeparateFromPreviousAndFollowingMessages() {
+        val messages = listOf(
+            UIMessage.user("原问题"),
+            UIMessage.assistant("原回复"),
+            UIMessage.user("压缩摘要").copy(isContextCheckpoint = true),
+            UIMessage.assistant("压缩后的回复"),
+            UIMessage.user("下一轮"),
+        )
+        val nodes = messages.map { it.toMessageNode() }
+        val rounds = nodes.toChatPreviewRounds(emptyMap())
+        assertEquals(listOf(listOf(0, 1), listOf(2), listOf(3), listOf(4)),
+            rounds.map { round -> round.entries.map { it.index } })
+        assertEquals(nodes[2].id, rounds[1].id)
+        assertEquals(listOf(false, true, false, false), rounds.map { it.checkpoint })
+        assertEquals(nodes[3].id, rounds[2].id)
+        assertEquals("[上下文检查点]", rounds[1].entries.single().text)
+        assertFalse(rounds[1].matches("压缩摘要"))
+        assertEquals(messages, nodes.map { it.currentMessage })
+    }
+
+    @Test
+    fun consecutiveAndNonUserCheckpointsRemainSeparate() {
+        val messages = listOf(
+            UIMessage.assistant("普通回复"),
+            UIMessage.assistant("摘要一").copy(isContextCheckpoint = true),
+            UIMessage.user("摘要二").copy(isContextCheckpoint = true),
+            UIMessage.assistant("之后"),
+        )
+        val rounds = messages.map { it.toMessageNode() }.toChatPreviewRounds(emptyMap())
+        assertEquals(listOf(0, 1, 2, 3), rounds.map { it.firstIndex })
+        assertTrue(rounds.all { it.entries.size == 1 })
+        assertEquals(listOf(false, true, true, false), rounds.map { it.checkpoint })
+    }
+
+    @Test
     fun membersSharingModelKeepNamesAndOriginalJumpIndices() {
         val first = Assistant(name = "角色甲")
         val second = Assistant(name = "角色乙")

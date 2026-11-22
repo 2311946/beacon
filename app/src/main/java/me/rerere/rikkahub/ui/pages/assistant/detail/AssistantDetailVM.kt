@@ -192,7 +192,8 @@ class AssistantDetailVM(
                     assistants = settings.assistants.map {
                         if (it.id == assistant.id) {
                             replaced = it
-                            assistant
+                            // 授权只能由专用开关修改，其他页面的旧快照不能恢复已撤销的授权。
+                            assistant.copy(allowAiModifySettings = it.allowAiModifySettings)
                         } else {
                             it
                         }
@@ -201,6 +202,17 @@ class AssistantDetailVM(
             replaced?.let { old ->
                 checkAvatarDelete(old = old, new = assistant) // 删除旧头像
                 checkBackgroundDelete(old = old, new = assistant) // 删除旧背景
+            }
+        }
+    }
+
+    /** 授权只在最新助手上更新，不用页面快照覆盖同期配置。 */
+    fun updateAllowAiModifySettings(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(assistants = settings.assistants.map { latest ->
+                    if (latest.id == assistantId) latest.copy(allowAiModifySettings = enabled) else latest
+                })
             }
         }
     }

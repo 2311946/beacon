@@ -4,9 +4,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -42,6 +45,9 @@ private const val LONG_PRESS_MS = 700L
 private const val SWIPE_MS = 350L
 private const val SCREENSHOT_MAX_SIDE = 1568
 
+// 刚拉起应用时系统可能仍在绑定无障碍服务
+private const val SERVICE_CONNECT_WAIT_MS = 2000L
+
 /**
  * 不允许 AI 操作的应用：支付和银行类
  * 不能打开，从别的应用跳转进去后也不能读屏和操作，只能返回或回到桌面
@@ -73,15 +79,24 @@ fun phoneUseActionOf(input: String): String? = runCatching {
 
 /**
  * [saveScreenshot] 把 JPEG 存成聊天文件并返回地址；[isSelfInForeground] 判断本应用是否在前台，单测里替换。
+ * [isCheckedInSystem] 区分未开启无障碍服务和已勾选但未连接。
  */
 internal fun buildPhoneUseTool(
     ownPackageName: String,
     manager: PhoneUseManager,
     saveScreenshot: (ByteArray) -> String,
     isFloatingWindowOn: () -> Boolean,
+    isCheckedInSystem: () -> Boolean,
     isSelfInForeground: suspend () -> Boolean = ::isAppInForeground,
 ): Tool {
-    val session = PhoneUseSession(ownPackageName, manager, saveScreenshot, isFloatingWindowOn, isSelfInForeground)
+    val session = PhoneUseSession(
+        ownPackageName,
+        manager,
+        saveScreenshot,
+        isFloatingWindowOn,
+        isCheckedInSystem,
+        isSelfInForeground,
+    )
     return Tool(
         name = PHONE_USE_TOOL_NAME,
         description = """
@@ -159,6 +174,7 @@ private class PhoneUseSession(
     private val manager: PhoneUseManager,
     private val saveScreenshot: (ByteArray) -> String,
     private val isFloatingWindowOn: () -> Boolean,
+    private val isCheckedInSystem: () -> Boolean,
     private val isSelfInForeground: suspend () -> Boolean,
 ) {
     // 模型可能一次发出多个调用，手势和元素编号都依赖顺序
@@ -167,15 +183,34 @@ private class PhoneUseSession(
     // 元素编号和坐标换算都以模型最后看到的那份为准
     private var lastScreen: PhoneScreen? = null
 
-    suspend fun execute(params: JsonObject): List<UIMessagePart> = mutex.withLock {
-        // 开启工具时已经要求过，这里防的是之后又把悬浮窗或它的权限关掉
+    private fun ensureFloatingWindowOn() {
         check(isFloatingWindowOn()) {
             "The background floating window is turned off, so the user cannot watch or stop you. " +
                 "Ask them to turn it on in Settings > Notifications (and grant the overlay permission) first."
         }
-        val controller = manager.controller.value ?: error(
-            "Phone Use is not enabled. Ask the user to turn on \"RikkaHub Phone Use\" in the system accessibility settings."
+    }
+
+    private suspend fun awaitController(): PhoneController {
+        check(isCheckedInSystem()) {
+            "Phone Use is not enabled. Ask the user to turn on \"Beacon Phone Use\" in the system accessibility settings."
+        }
+        val controller = withTimeoutOrNull(SERVICE_CONNECT_WAIT_MS) {
+            manager.controller.filterNotNull().first()
+        } ?: error(
+            "\"Beacon Phone Use\" is on in the system accessibility settings, but the service is not connected. " +
+                "The system may have stopped it after the app was swiped away from recent apps. " +
+                "Ask the user to turn it off and on again in the accessibility settings. " +
+                "They can also lock Beacon in recent apps and allow it to auto-start."
         )
+        // 等待连接期间用户可能关闭悬浮窗，连接成功不应绕过原有安全检查
+        ensureFloatingWindowOn()
+        return controller
+    }
+
+    suspend fun execute(params: JsonObject): List<UIMessagePart> = mutex.withLock {
+        // 开启工具时已经要求过，这里防的是之后又把悬浮窗或它的权限关掉
+        ensureFloatingWindowOn()
+        val controller = manager.controller.value ?: awaitController()
         when (val action = params.string("action") ?: error("action is required")) {
             "list_apps" -> text(
                 controller.listApps()

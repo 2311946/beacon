@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import kotlinx.datetime.toJavaLocalDateTime
+import me.rerere.rikkahub.utils.toLocalString
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import me.rerere.ai.core.MessageRole
@@ -12,6 +14,20 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class ConversationExportContentTest {
+    @Test
+    fun markdownIncludesEachMessagesTimestampAndEscapedSender() {
+        val first = UIMessage.user("问题").copy(createdAt = kotlinx.datetime.LocalDateTime(2026, 11, 20, 10, 20, 30))
+        val second = UIMessage.assistant("回答").copy(createdAt = kotlinx.datetime.LocalDateTime(2026, 11, 21, 11, 21, 31))
+        val markdown = buildMarkdownExport(request(listOf(first, second),
+            senderNames = mapOf(first.id to "用户", second.id to "角色*甲"))) { it.url }
+        val firstTime = first.createdAt.toJavaLocalDateTime().toLocalString()
+        val secondTime = second.createdAt.toJavaLocalDateTime().toLocalString()
+        assertTrue(markdown.contains("**用户** · *$firstTime*:"))
+        assertTrue(markdown.contains("**角色\\*甲** · *$secondTime*:"))
+        assertTrue(markdown.indexOf(firstTime) < markdown.indexOf("问题"))
+        assertTrue(markdown.indexOf(secondTime) < markdown.indexOf("回答"))
+    }
+
     private fun request(
         messages: List<UIMessage>,
         includeReasoning: Boolean = true,
@@ -44,8 +60,8 @@ class ConversationExportContentTest {
         val markdown = buildMarkdownExport(request(listOf(first, second), senderNames = names)) { it.url }
         assertEquals("角色甲", exportSenderName(first, names))
         assertEquals("角色乙", exportSenderName(second, names))
-        assertTrue(markdown.indexOf("**角色甲**:") < markdown.indexOf("甲的回复"))
-        assertTrue(markdown.indexOf("**角色乙**:") < markdown.indexOf("乙的回复"))
+        assertTrue(markdown.indexOf("**角色甲** · *") < markdown.indexOf("甲的回复"))
+        assertTrue(markdown.indexOf("**角色乙** · *") < markdown.indexOf("乙的回复"))
     }
 
     @Test

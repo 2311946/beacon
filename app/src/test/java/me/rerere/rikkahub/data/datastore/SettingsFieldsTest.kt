@@ -38,6 +38,37 @@ import kotlin.uuid.Uuid
 
 class SettingsFieldsTest {
     @Test
+    fun deletedBuiltInAssistantsStayDeletedAfterNormalizationAndReload() {
+        val kept = DEFAULT_ASSISTANTS.first()
+        val settings = Settings(assistants = listOf(kept), assistantId = Uuid.random())
+        val normalized = settings.normalized()
+        assertEquals(listOf(kept.id), normalized.assistants.map { it.id })
+        assertEquals(kept.id, normalized.assistantId)
+        val preferences = mutablePreferencesOf().apply { putSettings(normalized) }
+        assertEquals(normalized, preferences.toSettings().normalized())
+    }
+
+    @Test
+    fun removingCurrentAssistantFallsBackWithoutChangingRemainingMemorySettings() {
+        val first = Assistant(name = "待删除")
+        val kept = Assistant(name = "保留", enableMemory = true, memoryRetrievalTopK = 12)
+        val original = Settings(assistants = listOf(first, kept), assistantId = first.id)
+        val removed = original.withAssistantRemoved(first.id).normalized()
+        assertEquals(listOf(kept), removed.assistants)
+        assertEquals(kept.id, removed.assistantId)
+        assertEquals(original.memoryEmbedding, removed.memoryEmbedding)
+        assertEquals(removed, removed.withAssistantRemoved(kept.id))
+        assertEquals(removed, removed.withAssistantRemoved(first.id))
+    }
+
+    @Test
+    fun emptyAssistantListRestoresDefaultsAndValidSelection() {
+        val normalized = Settings(assistants = emptyList(), assistantId = Uuid.random()).normalized()
+        assertEquals(DEFAULT_ASSISTANTS.map { it.id }, normalized.assistants.map { it.id })
+        assertEquals(normalized.assistants.first().id, normalized.assistantId)
+    }
+
+    @Test
     fun `stored favorite models are filtered and deduplicated in first occurrence order`() {
         val first = Model(id = id(101))
         val second = Model(id = id(102))
@@ -68,6 +99,60 @@ class SettingsFieldsTest {
         val updated = settings.copy(favoriteModels = settings.favoriteModels + first.id + third.id)
         assertEquals(settings.favoriteModels, updated.normalized().favoriteModels)
         assertEquals(emptyList<Uuid>(), settings.copy(favoriteModels = emptyList()).normalized().favoriteModels)
+    }
+
+    @Test
+    fun `新助手和缺少授权字段的旧 JSON 默认禁止 AI 修改设置`() {
+        assertFalse(Assistant().allowAiModifySettings)
+        assertFalse(JsonInstant.decodeFromString<Assistant>("{}").allowAiModifySettings)
+        val legacy = JsonInstant.decodeFromString<Assistant>(
+            """{"name":"已有助手","enableMemory":true,"enableCalendar":true}"""
+        )
+        assertFalse(legacy.allowAiModifySettings)
+        assertEquals("已有助手", legacy.name)
+        assertEquals(true, legacy.enableMemory)
+        assertEquals(true, legacy.enableCalendar)
+    }
+
+    @Test
+    fun `旧 Preferences 助手 JSON 缺少授权字段时保持关闭`() {
+        val preferences = mutablePreferencesOf(
+            SettingsStore.ASSISTANTS to """[{"id":"00000000-0000-0000-0000-000000000020","name":"旧助手","enableMemory":true}]"""
+        )
+        val restored = preferences.toSettings()
+        val assistant = restored.assistants.single()
+        assertEquals(id(20), assistant.id)
+        assertEquals("旧助手", assistant.name)
+        assertEquals(true, assistant.enableMemory)
+        assertFalse(assistant.allowAiModifySettings)
+
+        preferences.putSettings(restored)
+        assertEquals(restored.assistants, preferences.toSettings().assistants)
+        assertFalse(preferences.toSettings().assistants.single().allowAiModifySettings)
+    }
+
+    @Test
+    fun `AI 修改设置授权 true false 经 Preferences 往返且助手互相隔离`() {
+        val first = Assistant(name = "第一个助手", allowAiModifySettings = true)
+        val second = Assistant(name = "第二个助手", allowAiModifySettings = false)
+        val selected = SAMPLE.copy(assistantId = second.id, assistants = listOf(first, second))
+        val preferences = mutablePreferencesOf().apply { putSettings(selected) }
+        var restored = preferences.toSettings()
+        assertEquals(selected, restored)
+        assertEquals(listOf(true, false), restored.assistants.map { it.allowAiModifySettings })
+
+        listOf(second.id to true, first.id to false, second.id to false, first.id to true).forEach { (id, allowed) ->
+            val unchanged = restored.assistants.single { it.id != id }
+            val updated = restored.copy(assistants = restored.assistants.map {
+                if (it.id == id) it.copy(allowAiModifySettings = allowed) else it
+            })
+            preferences.putSettings(updated, persisted = restored)
+            restored = preferences.toSettings()
+            assertEquals(updated, restored)
+            assertEquals(allowed, restored.assistants.single { it.id == id }.allowAiModifySettings)
+            assertEquals(unchanged, restored.assistants.single { it.id != id })
+            assertEquals(second.id, restored.assistantId)
+        }
     }
 
     @Test

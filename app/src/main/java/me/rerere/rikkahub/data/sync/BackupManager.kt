@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -26,6 +27,8 @@ import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.MediaCreationFiles
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -42,11 +45,37 @@ class BackupManager(
 ) {
     private val restoreMutex = Mutex()
 
-    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File = withContext(Dispatchers.IO) {
+    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File =
+        createBackupArchive(includeDatabase, includeFiles, ::createDatabaseSnapshot)
+
+    /** 安全模式救援绝不打开 Room；损坏源库只能报错，不能触发默认损坏删库或重建。 */
+    internal suspend fun createRescueBackup(): File = createBackupArchive(
+        includeDatabase = true,
+        includeFiles = true,
+        snapshotDatabase = { destination ->
+            currentCoroutineContext().ensureActive()
+            DatabaseBackup.createSnapshot(
+                context,
+                context.getDatabasePath(SQLiteConfiguration.DATABASE_NAME),
+                destination,
+            )
+            currentCoroutineContext().ensureActive()
+        },
+    )
+
+    private suspend fun createBackupArchive(
+        includeDatabase: Boolean,
+        includeFiles: Boolean,
+        snapshotDatabase: suspend (File) -> Unit,
+    ): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val archive = File.createTempFile("$BACKUP_FILE_PREFIX${timestamp}-", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
+            val snapshot = if (includeDatabase) {
+                File(staging, SQLiteConfiguration.DATABASE_NAME).also { snapshotDatabase(it) }
+            } else null
+            val databaseUserVersion = snapshot?.let { DatabaseBackup.readUserVersion(context, it) }
             val settings = settingsStore.awaitLoaded()
             val stickersJson = if (includeFiles && BackupFormat.hasStickerData(context)) {
                 BackupFormat.captureStickers(context, json)
@@ -65,9 +94,7 @@ class BackupManager(
                         stickers = stickersJson != null,
                         files = includeFiles,
                     ),
-                    databaseUserVersion = if (includeDatabase) {
-                        database.openHelper.readableDatabase.version
-                    } else null,
+                    databaseUserVersion = databaseUserVersion,
                 )
                 zip.putNextEntry(ZipEntry(BACKUP_MANIFEST))
                 zip.write(json.encodeToString(manifest).toByteArray(Charsets.UTF_8))
@@ -82,9 +109,7 @@ class BackupManager(
                     zip.write(stickersJson.toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
-                if (includeDatabase) {
-                    val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
-                    DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, snapshot)
+                if (snapshot != null) {
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
@@ -113,6 +138,7 @@ class BackupManager(
                     }
                 }
             }
+            currentCoroutineContext().ensureActive()
             archive
         } catch (e: Throwable) {
             archive.delete()
@@ -121,6 +147,8 @@ class BackupManager(
             staging.deleteRecursively()
         }
     }
+
+    fun hasPendingRestore(): Boolean = File(context.noBackupFilesDir, "backup-restore/pending").isDirectory
 
     suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean) =
         withContext(Dispatchers.IO) {
@@ -158,7 +186,7 @@ class BackupManager(
                             }
                             zip.getInputStream(entry).use { input ->
                                 FileOutputStream(target).use { output ->
-                                    input.copyTo(output)
+                                    copyCancellable(input, output)
                                     output.fd.sync()
                                 }
                             }
@@ -241,6 +269,34 @@ class BackupManager(
             }
         }
 
+    private suspend fun createDatabaseSnapshot(destination: File) {
+        currentCoroutineContext().ensureActive()
+        try {
+            DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, destination)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (roomFailure: Exception) {
+            currentCoroutineContext().ensureActive()
+            // VACUUM 失败可能留下不完整的输出，只清理本次创建的暂存文件。
+            for (file in listOf(destination, File(destination.path + "-wal"), File(destination.path + "-shm"))) {
+                check(!file.exists() || file.delete()) { "Cannot clear incomplete backup snapshot" }
+            }
+            try {
+                DatabaseBackup.createSnapshot(
+                    context,
+                    context.getDatabasePath(SQLiteConfiguration.DATABASE_NAME),
+                    destination,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (snapshotFailure: Exception) {
+                snapshotFailure.addSuppressed(roomFailure)
+                throw snapshotFailure
+            }
+        }
+        currentCoroutineContext().ensureActive()
+    }
+
     private fun isAttachment(name: String): Boolean {
         val folder = name.substringBefore('/')
         if (folder !in ATTACHMENT_FOLDERS || '/' !in name) return false
@@ -250,10 +306,20 @@ class BackupManager(
         return true
     }
 
-    private fun addFile(zip: ZipOutputStream, file: File, name: String) {
+    private suspend fun addFile(zip: ZipOutputStream, file: File, name: String) {
         zip.putNextEntry(ZipEntry(name))
-        file.inputStream().use { it.copyTo(zip) }
+        file.inputStream().use { copyCancellable(it, zip) }
         zip.closeEntry()
+    }
+
+    private suspend fun copyCancellable(input: InputStream, output: OutputStream) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val count = input.read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+        }
     }
 
     companion object {

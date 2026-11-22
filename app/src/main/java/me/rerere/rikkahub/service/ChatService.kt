@@ -1665,7 +1665,11 @@ class ChatService(
             )
             if (assistant != stored) {
                 settingsStore.update { latest ->
-                    latest.copy(assistants = latest.assistants.map { if (it.id == assistant.id) assistant else it })
+                    latest.copy(assistants = latest.assistants.map {
+                        if (it.id == assistant.id) assistant.copy(
+                            allowAiModifySettings = it.allowAiModifySettings,
+                        ) else it
+                    })
                 }
             }
         }

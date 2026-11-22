@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import kotlinx.datetime.toJavaLocalDateTime
+import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -66,7 +68,8 @@ internal fun buildMarkdownExport(
     appendLine()
     snapshot.messages.forEach { message ->
         val sender = exportSenderName(message, snapshot.senderNames)
-        appendLine("**${escapeExportLabel(sender)}**:")
+        val time = message.createdAt.toJavaLocalDateTime().toLocalString()
+        appendLine("**${escapeExportLabel(sender)}** · *$time*:")
         appendLine()
         appendExportParts(message.parts, snapshot.options.includeReasoning, imageSource)
         appendLine()

@@ -61,6 +61,28 @@ class RemoteFileStoreTest {
     }
 
     @Test
+    fun `upload detects mime type without changing a hash containing attachment name`() = runBlocking {
+        val attachment = file("附件#1.PNG")
+        val originalPath = attachment.absolutePath
+
+        val remote = store.upload(attachment).getOrThrow()
+
+        assertEquals(helloKey, remote.key)
+        assertEquals(listOf(helloKey to "image/png"), storage.puts)
+        assertEquals(listOf(originalPath), storage.uploadedPaths)
+        assertEquals("附件#1.PNG", attachment.name)
+        assertTrue(attachment.isFile)
+    }
+
+    @Test
+    fun `upload without an extension uses the binary mime type`() = runBlocking {
+        store.upload(file("附件#1")).getOrThrow()
+
+        assertEquals("application/octet-stream", storage.puts.single().second)
+        assertTrue(!storage.puts.single().first.substringAfterLast('/').contains('.'))
+    }
+
+    @Test
     fun `same content is uploaded once and reused without asking the bucket again`() = runBlocking {
         store.upload(file("a.png")).getOrThrow()
         val remote = store.upload(file("b.png")).getOrThrow()
@@ -191,6 +213,7 @@ class RemoteFileStoreTest {
     private inner class FakeStorage : RemoteObjectStorage {
         val objects = sortedMapOf<String, Instant>()
         val puts = mutableListOf<Pair<String, String>>()
+        val uploadedPaths = mutableListOf<String>()
         val deleted = mutableListOf<String>()
         var heads = 0
         var lists = 0
@@ -204,6 +227,7 @@ class RemoteFileStoreTest {
 
         override suspend fun put(key: String, file: File, contentType: String) {
             puts += key to contentType
+            uploadedPaths += file.absolutePath
             objects[key] = now
         }
 

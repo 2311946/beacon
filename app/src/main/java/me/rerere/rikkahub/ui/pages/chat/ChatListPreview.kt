@@ -53,6 +53,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.FavouriteCircle
+import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -167,10 +168,48 @@ internal fun ChatListPreview(
                 }
             }
             items(filtered, key = { it.id }) { round ->
-                ChatPreviewRoundCard(round, query, groupMode,
-                    currentIndex in round.firstIndex..round.lastIndex, jumpToNode,
-                    settings, conversation)
+                if (round.checkpoint) {
+                    ChatPreviewCheckpointCard(round,
+                        currentIndex in round.firstIndex..round.lastIndex, jumpToNode)
+                } else {
+                    ChatPreviewRoundCard(round, query, groupMode,
+                        currentIndex in round.firstIndex..round.lastIndex, jumpToNode,
+                        settings, conversation)
+                }
             }
+        }
+    }
+}
+
+/** 只标记原始检查点的位置；摘要正文仍沿用聊天记录的安全投影，不在概览泄露。 */
+@Composable
+private fun ChatPreviewCheckpointCard(
+    round: ChatPreviewRound,
+    isCurrent: Boolean,
+    onJumpToMessage: (Uuid) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = { onJumpToMessage(round.id) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer,
+        border = if (isCurrent) BorderStroke(1.5.dp, colors.primary) else null,
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(HugeIcons.Package01, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.chat_page_compress_checkpoint_title),
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                    modifier = Modifier.weight(1f))
+                if (round.favorite) Icon(HugeIcons.FavouriteCircle, "包含收藏消息", Modifier.size(16.dp))
+            }
+            if (isCurrent) Text("当前阅读", style = MaterialTheme.typography.labelSmall)
+            Text(round.entries.single().message.createdAt.toString().replace('T', ' ').take(16),
+                style = MaterialTheme.typography.labelSmall)
+            Text("此处插入了上下文压缩摘要，点击跳转查看。",
+                style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

@@ -1,6 +1,13 @@
 package me.rerere.rikkahub.data.ai.tools
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -25,11 +32,13 @@ class PhoneUseToolTest {
     private val controller = FakeController(manager)
     private var selfInForeground = false
     private var floatingWindowOn = true
+    private var checkedInSystem = false
     private val tool: Tool = buildPhoneUseTool(
         ownPackageName = "me.rerere.rikkahub",
         manager = manager,
         saveScreenshot = { "file:///screenshot.jpg" },
         isFloatingWindowOn = { floatingWindowOn },
+        isCheckedInSystem = { checkedInSystem },
         isSelfInForeground = { selfInForeground },
     )
 
@@ -40,6 +49,125 @@ class PhoneUseToolTest {
     fun `fails with guidance when the accessibility service is off`() = runTest {
         val error = runCatching { call { put("action", "observe") } }.exceptionOrNull()
         assertTrue(error!!.message!!.contains("not enabled"))
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `checked service that never connects gives restart guidance after two seconds`() = runTest {
+        checkedInSystem = true
+        val error = runCatching { call { put("action", "observe") } }.exceptionOrNull()
+        assertTrue(error is IllegalStateException)
+        assertTrue(error!!.message!!.contains("not connected"))
+        assertTrue(error.message!!.contains("turn it off and on again"))
+        assertEquals(2000L, testScheduler.currentTime)
+        assertTrue(controller.keys.isEmpty())
+        assertFalse(manager.acting.value)
+    }
+
+    @Test
+    fun `checked service can connect just before the wait expires`() = runTest {
+        checkedInSystem = true
+        launch {
+            delay(1999)
+            manager.attach(controller)
+        }
+        val output = call { put("action", "list_apps") }
+        assertTrue(output.contains("Demo App"))
+        assertFalse(output.contains("Alipay"))
+        assertEquals(1999L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `connected service executes immediately without consulting the system toggle`() = runTest {
+        manager.attach(controller)
+        val output = call { put("action", "list_apps") }
+        assertTrue(output.contains("Demo App"))
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a previously connected service that detaches is checked again on the next call`() = runTest {
+        checkedInSystem = true
+        manager.attach(controller)
+        assertTrue(call { put("action", "list_apps") }.contains("Demo App"))
+        manager.detach(controller)
+
+        val error = runCatching { call { put("action", "observe") } }.exceptionOrNull()
+        assertTrue(error!!.message!!.contains("turn it off and on again"))
+        assertEquals(2000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a stale service detach does not remove its replacement`() = runTest {
+        manager.attach(controller)
+        val replacement = FakeController(manager)
+        manager.attach(replacement)
+        manager.detach(controller)
+
+        assertEquals(replacement, manager.controller.value)
+        assertTrue(call { put("action", "list_apps") }.contains("Demo App"))
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `floating window remains required while waiting for the service`() = runTest {
+        checkedInSystem = true
+        launch {
+            delay(100)
+            floatingWindowOn = false
+            manager.attach(controller)
+        }
+        val error = runCatching {
+            call {
+                put("action", "press")
+                put("key", "home")
+            }
+        }.exceptionOrNull()
+        assertTrue(error!!.message!!.contains("floating window"))
+        assertTrue(controller.keys.isEmpty())
+        assertFalse(manager.acting.value)
+    }
+
+    @Test
+    fun `cancelling a connection wait propagates cancellation and releases the tool lock`() = runTest {
+        checkedInSystem = true
+        val waiting = async { call { put("action", "observe") } }
+        runCurrent()
+        waiting.cancelAndJoin()
+        assertTrue(waiting.isCancelled)
+        val error = runCatching { waiting.await() }.exceptionOrNull()
+        assertTrue(error is CancellationException)
+        assertEquals(0L, testScheduler.currentTime)
+        assertFalse(manager.acting.value)
+
+        manager.attach(controller)
+        assertTrue(call { put("action", "list_apps") }.contains("Demo App"))
+    }
+
+    @Test
+    fun `an outer timeout is not converted into stopped service guidance`() = runTest {
+        checkedInSystem = true
+        val output = withTimeoutOrNull(100) { call { put("action", "observe") } }
+        assertNull(output)
+        assertEquals(100L, testScheduler.currentTime)
+        assertFalse(manager.acting.value)
+    }
+
+    @Test
+    fun `cancelling during overlay hiding restores the overlay without performing the action`() = runTest {
+        manager.attach(controller)
+        val acting = async {
+            call {
+                put("action", "press")
+                put("key", "home")
+            }
+        }
+        runCurrent()
+        assertTrue(manager.acting.value)
+        acting.cancelAndJoin()
+        assertTrue(acting.isCancelled)
+        assertFalse(manager.acting.value)
+        assertTrue(controller.keys.isEmpty())
     }
 
     @Test

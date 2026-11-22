@@ -128,7 +128,13 @@ class BackupManagerTest {
                 zip.closeEntry()
             }
         }
+        assertFalse(manager.hasPendingRestore())
         manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        assertTrue(manager.hasPendingRestore())
+        val recreatedManager = BackupManager(
+            context, liveDatabase, GlobalContext.get().get<SettingsStore>(), JsonInstant,
+        )
+        assertTrue(recreatedManager.hasPendingRestore())
         assertEquals("live", probe(liveDatabase))
         val staged = File(context.noBackupFilesDir, "backup-restore/pending/payload/database/rikka_hub")
         assertTrue(staged.isFile)
@@ -136,6 +142,7 @@ class BackupManagerTest {
         assertFalse(File(staged.path + "-shm").exists())
         liveDatabase.close()
         assertTrue(BackupManager.applyPendingRestore(context, JsonInstant))
+        assertFalse(recreatedManager.hasPendingRestore())
         liveDatabase = AppDatabaseFactory.create(context)
         assertEquals("archived", probe(liveDatabase))
         assertEquals(originalGeneral, general.all)
@@ -167,6 +174,139 @@ class BackupManagerTest {
         }
         manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
         assertEquals("live", probe(liveDatabase))
+    }
+
+    @Test fun exportFallsBackToFileSnapshotWhenRoomRejectsDatabaseVersion() = runBlocking {
+        val source = context.getDatabasePath("rikka_hub")
+        val attachments = File(context.filesDir, "images/recovery.png").apply {
+            parentFile!!.mkdirs()
+            writeText("recovery attachment")
+        }
+        liveDatabase.openHelper.writableDatabase.version = 9999
+        liveDatabase.close()
+        liveDatabase = AppDatabaseFactory.create(context)
+        val roomFailure = runCatching { liveDatabase.openHelper.writableDatabase }.exceptionOrNull()
+        assertTrue("Room 应拒绝未知版本", roomFailure != null)
+        manager = BackupManager(context, liveDatabase, GlobalContext.get().get<SettingsStore>(), JsonInstant)
+        val archive = manager.createBackup(includeDatabase = true, includeFiles = true)
+        try {
+            ZipFile(archive).use { zip ->
+                val manifest = JsonInstant.decodeFromString<BackupManifest>(
+                    zip.getInputStream(zip.getEntry("backup_manifest.json")).bufferedReader().use { it.readText() }
+                )
+                assertEquals(9999, manifest.databaseUserVersion)
+                assertTrue(manifest.components.database)
+                assertTrue(manifest.components.files)
+                assertTrue(zip.getEntry("settings.json") != null)
+                assertTrue(zip.getEntry("preferences.json") != null)
+                assertTrue(zip.getEntry("workspace_metadata.json") != null)
+                assertEquals("recovery attachment", zip.getInputStream(zip.getEntry("images/recovery.png"))
+                    .bufferedReader().use { it.readText() })
+                val snapshot = File(directory, "recovery-snapshot")
+                zip.getInputStream(zip.getEntry(DatabaseBackup.ARCHIVE_DATABASE)).use { input ->
+                    snapshot.outputStream().use { input.copyTo(it) }
+                }
+                assertEquals(9999, DatabaseBackup.readUserVersion(context, snapshot))
+                assertEquals(null, zip.getEntry(DatabaseBackup.WAL))
+                assertEquals(null, zip.getEntry(DatabaseBackup.SHM))
+            }
+            assertEquals(9999, DatabaseBackup.readUserVersion(context, source))
+            assertEquals("recovery attachment", attachments.readText())
+        } finally {
+            archive.delete()
+        }
+    }
+
+    @Test fun rescueExportRejectsCorruptionWithoutOpeningRoomOrDeletingSource() = runBlocking {
+        liveDatabase.close()
+        val source = context.getDatabasePath("rikka_hub")
+        val original = "not a SQLite database: preserve recovery evidence".toByteArray()
+        source.writeBytes(original)
+        liveDatabase = AppDatabaseFactory.create(context)
+        manager = BackupManager(context, liveDatabase, GlobalContext.get().get<SettingsStore>(), JsonInstant)
+        val cacheBefore = context.cacheDir.listFiles().orEmpty().map { it.name }.toSet()
+
+        val failure = runCatching { manager.createRescueBackup() }.exceptionOrNull()
+
+        assertTrue("救援备份必须明确失败，不能导出重建的空库", failure != null)
+        assertFalse("救援备份不能打开 Room", liveDatabase.isOpen)
+        assertTrue(source.isFile)
+        assertArrayEquals(original, source.readBytes())
+        assertEquals(cacheBefore, context.cacheDir.listFiles().orEmpty().map { it.name }.toSet())
+        assertFalse(manager.hasPendingRestore())
+    }
+
+    @Test fun rescueExportPreservesFutureSchemaWithoutOpeningRoom() = runBlocking {
+        val source = context.getDatabasePath("rikka_hub")
+        liveDatabase.openHelper.writableDatabase.version = 9999
+        liveDatabase.close()
+        val original = source.readBytes()
+        liveDatabase = AppDatabaseFactory.create(context)
+        manager = BackupManager(context, liveDatabase, GlobalContext.get().get<SettingsStore>(), JsonInstant)
+        val archive = manager.createRescueBackup()
+        try {
+            assertFalse(liveDatabase.isOpen)
+            assertArrayEquals(original, source.readBytes())
+            ZipFile(archive).use { zip ->
+                val manifest = JsonInstant.decodeFromString<BackupManifest>(
+                    zip.getInputStream(zip.getEntry("backup_manifest.json")).bufferedReader().use { it.readText() }
+                )
+                assertEquals(9999, manifest.databaseUserVersion)
+                assertTrue(manifest.components.database)
+                assertTrue(manifest.components.files)
+                assertTrue(zip.getEntry("settings.json") != null)
+                assertTrue(zip.getEntry("preferences.json") != null)
+                assertTrue(zip.getEntry("workspace_metadata.json") != null)
+                val snapshot = File(directory, "rescue-future-snapshot")
+                zip.getInputStream(zip.getEntry(DatabaseBackup.ARCHIVE_DATABASE)).use { input ->
+                    snapshot.outputStream().use { input.copyTo(it) }
+                }
+                assertEquals(9999, DatabaseBackup.readUserVersion(context, snapshot))
+                assertEquals(null, zip.getEntry(DatabaseBackup.WAL))
+                assertEquals(null, zip.getEntry(DatabaseBackup.SHM))
+            }
+        } finally {
+            archive.delete()
+        }
+    }
+
+    @Test fun rescueExportIncludesCommittedWalAndKeepsFullBeaconArchive() = runBlocking {
+        val db = liveDatabase.openHelper.writableDatabase
+        DatabaseBackup.checkpoint(db)
+        db.query("PRAGMA wal_autocheckpoint=0").use { assertTrue(it.moveToFirst()) }
+        db.execSQL("INSERT INTO backup_probe VALUES ('rescue WAL')")
+        assertTrue(File(context.getDatabasePath("rikka_hub").path + "-wal").length() > 0)
+        val attachment = File(context.filesDir, "images/rescue.png").apply {
+            parentFile!!.mkdirs()
+            writeText("rescue attachment")
+        }
+        val archive = manager.createRescueBackup()
+        try {
+            db.execSQL("INSERT INTO backup_probe VALUES ('after rescue')")
+            ZipFile(archive).use { zip ->
+                assertEquals("rescue attachment", zip.getInputStream(zip.getEntry("images/rescue.png"))
+                    .bufferedReader().use { it.readText() })
+                assertTrue(zip.getEntry("settings.json") != null)
+                assertTrue(zip.getEntry("preferences.json") != null)
+                assertTrue(zip.getEntry("workspace_metadata.json") != null)
+                val snapshot = File(directory, "rescue-wal-snapshot")
+                zip.getInputStream(zip.getEntry(DatabaseBackup.ARCHIVE_DATABASE)).use { input ->
+                    snapshot.outputStream().use { input.copyTo(it) }
+                }
+                withRoom(snapshot) { room ->
+                    room.openHelper.readableDatabase.query("SELECT text FROM backup_probe ORDER BY rowid").use { cursor ->
+                        val values = mutableListOf<String>()
+                        while (cursor.moveToNext()) values.add(cursor.getString(0))
+                        assertEquals(listOf("live", "rescue WAL"), values)
+                    }
+                }
+                assertEquals(null, zip.getEntry(DatabaseBackup.WAL))
+                assertEquals(null, zip.getEntry(DatabaseBackup.SHM))
+            }
+            assertEquals("rescue attachment", attachment.readText())
+        } finally {
+            archive.delete()
+        }
     }
 
     @Test fun memoryBodyAndFourSideTablesSurviveFullZipRestoreWithAnotherPendingJob() = runBlocking {

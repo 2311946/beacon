@@ -1,10 +1,21 @@
 package me.rerere.rikkahub.utils
 
 import org.apache.commons.text.StringEscapeUtils
+import java.net.URLConnection
 import java.net.URLDecoder
 import java.net.URLEncoder
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+
+/**
+ * 仅将最后一个扩展名交给 MIME 推断，避免 Android 9/10 处理含 # 的文件名时崩溃。
+ */
+fun guessMimeTypeFromFileName(fileName: String): String {
+    val ext = fileName.substringAfterLast('/').substringAfterLast('.', "").filter { it.isLetterOrDigit() }
+    return ext.takeIf { it.isNotEmpty() }
+        ?.let { URLConnection.guessContentTypeFromName("file.${it.lowercase()}") }
+        ?: "application/octet-stream"
+}
 
 fun String.urlEncode(): String {
     return URLEncoder.encode(this, "UTF-8")

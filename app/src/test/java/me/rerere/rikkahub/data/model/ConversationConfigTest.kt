@@ -189,6 +189,15 @@ class ConversationConfigTest {
     }
 
     @Test
+    fun `AI config permission follows latest assistant instead of bound conversation`() {
+        val enabled = assistant.copy(allowAiModifySettings = true)
+        val bound = conversation(enabled).bindConfig(settings(enabled))
+        assertTrue(settings(enabled).getAssistantOf(bound).allowAiModifySettings)
+        assertFalse(settings(enabled.copy(allowAiModifySettings = false)).getAssistantOf(bound).allowAiModifySettings)
+        assertTrue(settings(enabled).getAssistantOf(bound).allowAiModifySettings)
+    }
+
+    @Test
     fun `bound built-in search overrides the model switch`() {
         val bound = conversation().bindConfig(settings())
         val disabled = bound.copy(config = bound.config?.copy(builtInSearch = false))

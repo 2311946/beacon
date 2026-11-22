@@ -18,6 +18,28 @@ internal object DatabaseBackup {
         database.execSQL("VACUUM main INTO ?", arrayOf(destination.absolutePath))
     }
 
+    /** Room 无法打开时，仍由 SQLite 读取已提交的 WAL 并生成一致快照，不复制活动数据库文件。 */
+    fun createSnapshot(context: Context, source: File, destination: File) {
+        openReadOnly(context, source).use { database ->
+            createSnapshot(database, destination)
+        }
+    }
+
+    fun readUserVersion(context: Context, snapshot: File): Int =
+        openReadOnly(context, snapshot).use { it.version }
+
+    private fun openReadOnly(context: Context, file: File): SQLiteDatabase {
+        require(file.isFile && file.length() > 0) { "Backup database is missing or empty" }
+        val configuration = SQLiteConfiguration.configure(
+            context,
+            SQLiteDatabaseConfiguration(file.absolutePath, SQLiteDatabase.OPEN_READONLY),
+        )
+        return SQLiteDatabase.openDatabase(configuration, null) {
+            // 默认损坏处理器可能删除源文件；备份只能报告错误。
+            error("Backup database is corrupt")
+        }
+    }
+
     /** Only opens the staged copy. The caller must place its matching WAL beside it first. */
     fun normalize(context: Context, databaseFile: File) {
         require(databaseFile.isFile && databaseFile.length() > 0) { "Backup database is missing or empty" }

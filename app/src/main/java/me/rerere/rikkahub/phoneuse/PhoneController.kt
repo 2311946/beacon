@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.phoneuse
 
+import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +80,19 @@ interface PhoneController {
  */
 fun isFloatingChatWindowOn(context: Context, settings: Settings): Boolean =
     settings.displaySetting.enableFloatingChatWindow && android.provider.Settings.canDrawOverlays(context)
+
+// 服务类只在 github 渠道里，这里按名字找，包名使用实际安装包名以兼容 Beacon 和 debug 版
+private const val PHONE_USE_SERVICE_CLASS = "me.rerere.rikkahub.phoneuse.PhoneUseAccessibilityService"
+
+/** 系统勾选不代表服务已连接，被系统停止后可能需要用户关闭再开启。 */
+fun isPhoneUseCheckedInSystem(context: Context): Boolean {
+    val enabled = android.provider.Settings.Secure.getString(
+        context.contentResolver,
+        android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    ) ?: return false
+    val target = ComponentName(context.packageName, PHONE_USE_SERVICE_CLASS)
+    return enabled.split(':').any { ComponentName.unflattenFromString(it) == target }
+}
 
 /** 无障碍服务连接后把自己登记在这里，工具和设置页从这里拿 */
 class PhoneUseManager {

@@ -17,12 +17,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
 import me.rerere.hugeicons.HugeIcons
@@ -42,6 +46,7 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
+import me.rerere.rikkahub.phoneuse.isPhoneUseCheckedInSystem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -89,7 +94,8 @@ fun AssistantLocalToolPage(id: String) {
         AssistantLocalToolContent(
             innerPadding = innerPadding,
             assistant = assistant,
-            onUpdate = { vm.update(it) }
+            onUpdate = { vm.update(it) },
+            onAllowAiModifySettingsChange = vm::updateAllowAiModifySettings,
         )
     }
 }
@@ -98,7 +104,8 @@ fun AssistantLocalToolPage(id: String) {
 private fun AssistantLocalToolContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
-    onUpdate: (Assistant) -> Unit
+    onUpdate: (Assistant) -> Unit,
+    onAllowAiModifySettingsChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -106,6 +113,13 @@ private fun AssistantLocalToolContent(
     val settingsStore: SettingsStore = koinInject()
     val phoneUseManager: PhoneUseManager = koinInject()
     val phoneUseServiceOn = phoneUseManager.controller.collectAsStateWithLifecycle().value != null
+    // 从系统设置回来后重新读取，避免把已勾选但被系统停止的服务误报为未开启
+    var phoneUseCheckedInSystem by remember { mutableStateOf(isPhoneUseCheckedInSystem(context)) }
+    LifecycleResumeEffect(context) {
+        phoneUseCheckedInSystem = isPhoneUseCheckedInSystem(context)
+        onPauseOrDispose {}
+    }
+    val phoneUseServiceStopped = !phoneUseServiceOn && phoneUseCheckedInSystem
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
     val floatingWindowRequiredText =
@@ -141,7 +155,14 @@ private fun AssistantLocalToolContent(
         }
         // 无障碍服务还没开时带用户去系统设置，开关照常打开，开完服务就能用
         if (enabled && option == LocalToolOption.PhoneUse && !phoneUseServiceOn) {
-            toaster.show(message = enableServiceText, type = ToastType.Warning)
+            toaster.show(
+                message = if (phoneUseServiceStopped) {
+                    "Phone Use 已在系统设置中开启，但服务尚未连接。若持续如此，请关闭后重新开启无障碍服务。"
+                } else {
+                    enableServiceText
+                },
+                type = ToastType.Warning,
+            )
             context.openAccessibilitySettings()
         }
         if (enabled && option == LocalToolOption.ScreenTime && !context.hasUsageStatsPermission()) {
@@ -214,6 +235,16 @@ private fun AssistantLocalToolContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         CardGroup {
+            switchItem(
+                checked = assistant.allowAiModifySettings,
+                onCheckedChange = onAllowAiModifySettingsChange,
+                headlineContent = { Text("允许AI修改设置") },
+                supportingContent = {
+                    Text("允许此助手申请修改白名单配置，每次仍需审批。唤醒全局参数会影响其他角色；关闭后隐藏工具并阻止尚未执行的调用。")
+                },
+            )
+        }
+        CardGroup {
             toolItem(
                 option = LocalToolOption.JavascriptEngine,
                 icon = HugeIcons.JavaScript,
@@ -274,7 +305,11 @@ private fun AssistantLocalToolContent(
                             // 开了工具但服务没开时模型调用会直接报错，在这里说明原因
                             if (LocalToolOption.PhoneUse in assistant.localTools && !phoneUseServiceOn) {
                                 Text(
-                                    text = stringResource(R.string.assistant_page_local_tools_phone_use_service_off),
+                                    text = if (phoneUseServiceStopped) {
+                                        "无障碍服务已开启但未连接，可能已被系统停止。若稍等后仍未恢复，请到系统无障碍设置中关闭后重新开启；也可锁定后台并允许自启动。"
+                                    } else {
+                                        stringResource(R.string.assistant_page_local_tools_phone_use_service_off)
+                                    },
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }

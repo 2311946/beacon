@@ -77,6 +77,47 @@ class DatabaseBackupTest {
         }
     }
 
+    @Test fun readOnlySnapshotIncludesCommittedWalAndPreservesSourceVersion() {
+        val source = File(directory, "source")
+        val snapshot = File(directory, "snapshot")
+        createWalDatabase(source).use { live ->
+            live.version = 987
+            live.execSQL("CREATE VIRTUAL TABLE search USING fts5(text, tokenize='simple')")
+            live.execSQL("INSERT INTO search(text) VALUES ('hello recovery')")
+            DatabaseBackup.createSnapshot(context, source, snapshot)
+            assertEquals(987, DatabaseBackup.readUserVersion(context, snapshot))
+            live.execSQL("INSERT INTO messages(text) VALUES ('after snapshot')")
+            open(snapshot).use {
+                assertEquals(1L, it.longForQuery("SELECT count(*) FROM messages", null))
+                assertEquals(1L, it.longForQuery("SELECT count(*) FROM search WHERE search MATCH 'hello'", null))
+            }
+            assertEquals(2L, live.longForQuery("SELECT count(*) FROM messages", null))
+            assertEquals(987, live.version)
+        }
+        assertFalse(File(snapshot.path + "-wal").exists())
+        assertFalse(File(snapshot.path + "-shm").exists())
+    }
+
+    @Test fun readOnlySnapshotDoesNotCreateMissingSource() {
+        val source = File(directory, "missing")
+        val snapshot = File(directory, "snapshot")
+        val failure = runCatching { DatabaseBackup.createSnapshot(context, source, snapshot) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertFalse(source.exists())
+        assertFalse(snapshot.exists())
+    }
+
+    @Test fun readOnlyCorruptionFailureDoesNotDeleteSource() {
+        val source = File(directory, "corrupt").apply { writeText("not a SQLite database") }
+        val original = source.readBytes()
+        val failure = runCatching {
+            DatabaseBackup.createSnapshot(context, source, File(directory, "snapshot"))
+        }.exceptionOrNull()
+        assertTrue(failure != null)
+        assertTrue(source.isFile)
+        assertTrue(original.contentEquals(source.readBytes()))
+    }
+
     @Test fun corruptDatabaseIsRejected() {
         val file = File(directory, "invalid")
         file.writeText("not a SQLite database")
