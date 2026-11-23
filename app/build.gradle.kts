@@ -34,6 +34,8 @@ android {
 
     defaultConfig {
         applicationId = "me.xuanxuan.beacon"
+        // 独立资源名避免各语言 app_name 覆盖构建类型的应用名称。
+        resValue("string", "beacon_app_label", "Beacon")
         minSdk = 26
         targetSdk = 37
         versionCode = 194
@@ -85,7 +87,8 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // 仅供自用：复用本机 Debug 密钥，不要求单独配置 Release keystore。
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = true
             }
@@ -93,7 +96,8 @@ android {
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = ".dev"
+            resValue("string", "beacon_app_label", "Beacon Dev")
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -119,6 +123,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")

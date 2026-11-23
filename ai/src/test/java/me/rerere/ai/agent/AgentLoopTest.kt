@@ -59,6 +59,88 @@ class AgentLoopTest {
     ) = runAgent(request, hooks).toList()
 
     @Test
+    fun `provider stream failure is reported without changing exception identity`() = runTest {
+        val failure = IOException("connection reset")
+        val reported = mutableListOf<Throwable>()
+        provider.stream { throw failure }
+        val observer = object : AgentHooks by hooks {
+            override fun onProviderFailure(error: Throwable) { reported += error }
+        }
+        val caught = runCatching { runToEnd(hooks = observer) }.exceptionOrNull()
+        assertTrue(caught === failure)
+        assertEquals(listOf(failure), reported)
+    }
+
+    @Test
+    fun `provider non streaming failure is reported`() = runTest {
+        val reported = mutableListOf<Throwable>()
+        val observer = object : AgentHooks by hooks {
+            override fun onProviderFailure(error: Throwable) { reported += error }
+        }
+        // 无排队响应的 FakeProvider 在 generateText 内抛错。
+        val caught = runCatching { runToEnd(request(stream = false), observer) }.exceptionOrNull()
+        assertNotNull(caught)
+        assertEquals(listOf(caught), reported)
+    }
+
+    @Test
+    fun `preview transformation failure is not reported as provider failure`() = runTest {
+        val reported = mutableListOf<Throwable>()
+        val failure = IOException("local transform")
+        provider.stream { text("hello"); finish() }
+        val observer = object : AgentHooks by hooks {
+            override fun onProviderFailure(error: Throwable) { reported += error }
+            override suspend fun previewStep(message: UIMessage, newPartsFrom: Int): UIMessage = throw failure
+        }
+        assertTrue(runCatching { runToEnd(hooks = observer) }.exceptionOrNull() === failure)
+        assertTrue(reported.isEmpty())
+    }
+
+    @Test
+    fun `prepare and finish failures are not reported as provider failures`() = runTest {
+        for (inPrepare in listOf(true, false)) {
+            val reported = mutableListOf<Throwable>()
+            val failure = IOException("local processing")
+            if (!inPrepare) provider.result(UIMessage.assistant("hello"))
+            val observer = object : AgentHooks by hooks {
+                override fun onProviderFailure(error: Throwable) { reported += error }
+                override suspend fun prepareStep(messages: List<UIMessage>): StepRequest =
+                    if (inPrepare) throw failure else hooks.prepareStep(messages)
+                override suspend fun finishStep(message: UIMessage, newPartsFrom: Int): UIMessage = throw failure
+            }
+            assertTrue(runCatching { runToEnd(request(stream = false), observer) }.exceptionOrNull() === failure)
+            assertTrue(reported.isEmpty())
+        }
+    }
+
+    @Test
+    fun `provider cancellation does not trigger failure notification`() = runTest {
+        val reported = mutableListOf<Throwable>()
+        provider.stream { throw kotlinx.coroutines.CancellationException("stop") }
+        val observer = object : AgentHooks by hooks {
+            override fun onProviderFailure(error: Throwable) { reported += error }
+        }
+        assertTrue(runCatching { runToEnd(hooks = observer) }.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        assertTrue(reported.isEmpty())
+    }
+
+    @Test
+    fun `cancelled provider IO completion does not notify failure`() = runTest {
+        val reported = mutableListOf<Throwable>()
+        provider.stream {
+            kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.cancel()
+            throw IOException("canceled")
+        }
+        val observer = object : AgentHooks by hooks {
+            override fun onProviderFailure(error: Throwable) { reported += error }
+        }
+        val child = launch { runToEnd(hooks = observer) }
+        child.join()
+        assertTrue(child.isCancelled)
+        assertTrue(reported.isEmpty())
+    }
+
+    @Test
     fun `fresh streaming reply never reuses previous assistant identity`() = runTest {
         val previous = UIMessage.assistant("上一位角色的回复")
         provider.stream { text("新的回复"); finish() }

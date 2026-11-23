@@ -1,14 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy Auto Backup rules for Android 11 and earlier.
+     An explicit include switches backup to an allowlist: only file/upload/ is backed up.
+     SharedPreferences (including github_backup.xml and its .bak) are not included.
+     Do not exclude paths outside that allowlist: FullBackupContent rejects them.
+     Android 12+ uses data_extraction_rules.xml instead. -->
 <full-backup-content>
   <include
     domain="file"
     path="upload/" />
-  <exclude domain="sharedpref" path="github_backup.xml" />
-  <exclude domain="sharedpref" path="github_backup.xml.bak" />
 </full-backup-content>

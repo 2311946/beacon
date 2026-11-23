@@ -32,6 +32,8 @@ enum class UsageSource {
     AUTONOMOUS_WAKEUP,
     ASSISTANT_STATUS,
     CALENDAR,
+    ERROR_DIAGNOSIS,
+    HEALTH_CHECK,
 }
 
 /** 记录用量时附带的归属信息 */

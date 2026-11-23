@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import me.rerere.rikkahub.data.db.AppDatabase
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,6 +45,59 @@ class Migration_35_36_Test {
                 assertTrue(found)
             }
         }
+    }
+
+    @Test
+    fun existingMountColumnPreservesNonEmptyMountsAndMigrationCanRunRepeatedly() {
+        val name = "migration-35-36-existing-mounts-test"
+        val mounts = "[{\"id\":\"shared\",\"path\":\"/mnt/shared\"}]"
+        helper.createDatabase(name, 35).use { db ->
+            db.execSQL("ALTER TABLE `workspaces` ADD COLUMN `storage_mounts` TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL(
+                "INSERT INTO workspaces (id, name, root, shell_status, created_at, updated_at, storage_mounts) " +
+                    "VALUES ('local', 'Existing', 'local-root', 'READY', 100, 200, ?)",
+                arrayOf<Any>(mounts),
+            )
+            Migration_35_36.migrate(db)
+            Migration_35_36.migrate(db)
+        }
+
+        helper.runMigrationsAndValidate(name, 36, true, Migration_35_36).use { db ->
+            db.query("SELECT storage_mounts FROM workspaces WHERE id = 'local'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(mounts, cursor.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun existingMountColumnWithWrongTypeIsRejectedByRoomValidation() {
+        val name = "migration-35-36-wrong-mount-type-test"
+        helper.createDatabase(name, 35).use { db ->
+            db.execSQL("ALTER TABLE `workspaces` ADD COLUMN `storage_mounts` INTEGER NOT NULL DEFAULT '[]'")
+            Migration_35_36.migrate(db)
+        }
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            helper.runMigrationsAndValidate(name, 36, true, Migration_35_36).close()
+        }
+        assertTrue(error.message.orEmpty().replace(Regex("\\s+"), " ").contains("Migration didn't properly handle: workspaces"))
+        assertTrue(error.message.orEmpty().contains("storage_mounts"))
+    }
+
+    @Test
+    fun existingMountColumnWithWrongDefaultIsRejectedByRoomValidation() {
+        val name = "migration-35-36-wrong-mount-default-test"
+        helper.createDatabase(name, 35).use { db ->
+            db.execSQL("ALTER TABLE `workspaces` ADD COLUMN `storage_mounts` TEXT NOT NULL DEFAULT '{}'")
+            Migration_35_36.migrate(db)
+        }
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            helper.runMigrationsAndValidate(name, 36, true, Migration_35_36).close()
+        }
+        assertTrue(error.message.orEmpty().replace(Regex("\\s+"), " ").contains("Migration didn't properly handle: workspaces"))
+        assertTrue(error.message.orEmpty().contains("storage_mounts"))
     }
 
     @Test

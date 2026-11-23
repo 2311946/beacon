@@ -60,6 +60,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleTextGenerationResult
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
@@ -234,7 +235,11 @@ private fun StreamChunk.maxClaudeServerToolIndex(): Int? {
 
 private fun ServerToolMetadata.maxIndex(): Int? = listOfNotNull(callIndex, resultIndex).maxOrNull()
 
-class ClaudeProvider(private val client: OkHttpClient, context: Context? = null) : Provider<ProviderSetting.Claude> {
+class ClaudeProvider(
+    private val client: OkHttpClient,
+    context: Context? = null,
+    private val diagnosticMode: Boolean = false,
+) : Provider<ProviderSetting.Claude> {
     private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
 
     override suspend fun getQuota(providerSetting: ProviderSetting.Claude): ProviderQuota? =
@@ -285,7 +290,10 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): TextGenerationResult = withContext(Dispatchers.IO) {
-        generateClaudeWithPauseTurn(messages, params.model) { requestMessages ->
+        generateClaudeWithPauseTurn(
+            messages, params.model,
+            maxContinuations = if (diagnosticMode) 0 else MAX_PAUSE_TURN_CONTINUATIONS,
+        ) { requestMessages ->
             generateTextOnce(providerSetting, requestMessages, params)
         }
     }
@@ -306,11 +314,11 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        logRequestBody(TAG, "generateText") { json.encodeToString(requestBody) }
+        if (!diagnosticMode) logRequestBody(TAG, "generateText") { json.encodeToString(requestBody) }
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw HttpException("Failed to get response: ${response.code} ${response.body?.string()}", response.code)
         }
 
         val bodyStr = response.body?.string() ?: ""
@@ -336,7 +344,10 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): Flow<StreamChunk> = streamClaudeWithPauseTurn(messages, params.model) { requestMessages ->
+    ): Flow<StreamChunk> = streamClaudeWithPauseTurn(
+        messages, params.model,
+        maxContinuations = if (diagnosticMode) 0 else MAX_PAUSE_TURN_CONTINUATIONS,
+    ) { requestMessages ->
         streamTextOnce(providerSetting, requestMessages, params)
     }
 
@@ -357,10 +368,10 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        logRequestBody(TAG, "streamText") { json.encodeToString(requestBody) }
+        if (!diagnosticMode) logRequestBody(TAG, "streamText") { json.encodeToString(requestBody) }
 
         requestBody["messages"]!!.jsonArray.forEach {
-            Log.i(TAG, "streamText: $it")
+            if (!diagnosticMode) Log.i(TAG, "streamText: $it")
         }
 
         val decoder = ClaudeStreamDecoder()
@@ -368,7 +379,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
                 trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    if (!diagnosticMode) Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                 }
             }
         }
@@ -380,7 +391,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: type=$type, data=$data")
+                if (!diagnosticMode) Log.d(TAG, "onEvent: type=$type, data=$data")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
@@ -393,20 +404,27 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
 
-                t?.printStackTrace()
-                Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+                if (!diagnosticMode) t?.printStackTrace()
+                if (!diagnosticMode) Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
 
-                val bodyRaw = response?.body?.stringSafe()
+                var bodyRaw: String? = null
                 try {
+                    bodyRaw = response?.body?.stringSafe()
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        Log.i(TAG, "Error response: $bodyElement")
+                        if (!diagnosticMode) Log.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
+                    if (!diagnosticMode) Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    if (!diagnosticMode) e.printStackTrace()
                 } finally {
+                    if (response != null && !response.isSuccessful) {
+                        exception = HttpException(
+                            exception?.message ?: "Unknown error: ${response.code}",
+                            response.code
+                        )
+                    }
                     close(exception)
                 }
             }
@@ -420,7 +438,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         val eventSource = client.newEventSource(request, listener)
 
         awaitClose {
-            Log.d(TAG, "Closing eventSource")
+            if (!diagnosticMode) Log.d(TAG, "Closing eventSource")
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
@@ -697,7 +715,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     put("data", encoded.base64)
                 })
             }.onFailure {
-                Log.w(TAG, "encode image failed: $url", it)
+                if (!diagnosticMode) Log.w(TAG, "encode image failed: $url", it)
                 put("type", "text")
                 put("text", "")
             }
@@ -761,7 +779,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
                 "redacted_thinking" -> {
                     val data = block["data"]?.jsonPrimitiveOrNull?.contentOrNull
-                    println(data)
+                    if (!diagnosticMode) println(data)
                 }
 
                 "tool_use" -> {

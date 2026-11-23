@@ -18,8 +18,12 @@ internal typealias AccountHeaders = Request.Builder.(OAuthCredential) -> Unit
 private class AccountRequestTag(val setting: ProviderSetting.Account, val applyHeaders: AccountHeaders)
 
 /** 账号类提供商的 client：请求被 401 拒绝时刷新一次 token 再重试 */
-internal fun OkHttpClient.withAccountAuthenticator(credentials: AccountCredentialProvider): OkHttpClient =
-    newBuilder().authenticator(AccountTokenAuthenticator(credentials)).build()
+internal fun OkHttpClient.withAccountAuthenticator(
+    credentials: AccountCredentialProvider,
+    diagnosticMode: Boolean = false,
+): OkHttpClient = newBuilder()
+    .authenticator(if (diagnosticMode) Authenticator.NONE else AccountTokenAuthenticator(credentials))
+    .build()
 
 /**
  * 给账号类请求加上鉴权：先放自定义头，鉴权头后写，保证不会被覆盖；

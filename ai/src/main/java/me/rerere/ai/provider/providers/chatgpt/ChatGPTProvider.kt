@@ -70,9 +70,10 @@ internal val CODEX_CAPABILITIES = ResponseProviderCapabilities(
 class ChatGPTProvider(
     client: OkHttpClient,
     private val credentials: AccountCredentialProvider,
+    diagnosticMode: Boolean = false,
 ) : Provider<ProviderSetting.ChatGPT> {
-    private val client = client.withAccountAuthenticator(credentials)
-    private val responseAPI = ResponseAPI(this.client)
+    private val client = client.withAccountAuthenticator(credentials, diagnosticMode)
+    private val responseAPI = ResponseAPI(this.client, diagnosticMode = diagnosticMode)
 
     override suspend fun listModels(providerSetting: ProviderSetting.ChatGPT): List<Model> {
         val request = Request.Builder()

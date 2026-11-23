@@ -45,6 +45,7 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
@@ -88,6 +89,7 @@ internal fun ProviderSetting.Google.interactionsUrl(): String {
 internal class InteractionsAPI(
     private val client: OkHttpClient,
     private val authorize: suspend (ProviderSetting.Google, Request) -> Request = { _, request -> request },
+    private val diagnosticMode: Boolean = false,
 ) {
     suspend fun generateText(
         providerSetting: ProviderSetting.Google,
@@ -100,7 +102,7 @@ internal class InteractionsAPI(
         // await() waits for the response headers; reading the body can still block.
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+                throw HttpException("Failed to get response: ${response.code} ${response.body.string()}", response.code)
             }
             val bodyJson = json.parseToJsonElement(response.body.string()).jsonObject
             parseInteraction(bodyJson, fallbackModel = params.model.modelId)
@@ -115,14 +117,14 @@ internal class InteractionsAPI(
         val requestBody = buildRequestBody(messages, params, stream = true)
         val request = buildRequest(providerSetting, params, requestBody)
 
-        logRequestBody(TAG, "streamText") { json.encodeToString(requestBody) }
+        if (!diagnosticMode) logRequestBody(TAG, "streamText") { json.encodeToString(requestBody) }
 
         val decoder = InteractionsStreamDecoder(fallbackModel = params.model.modelId)
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
                 trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    if (!diagnosticMode) Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                 }
             }
         }
@@ -134,13 +136,13 @@ internal class InteractionsAPI(
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
+                if (!diagnosticMode) Log.d(TAG, "onEvent: $id/$type $data")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
                     if (result.completed) close()
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to parse stream event: $data", e)
+                    if (!diagnosticMode) Log.e(TAG, "Failed to parse stream event: $data", e)
                     close(e)
                 }
             }
@@ -148,16 +150,23 @@ internal class InteractionsAPI(
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
 
-                val bodyRaw = response?.body?.stringSafe()
+                var bodyRaw: String? = null
                 try {
+                    bodyRaw = response?.body?.stringSafe()
                     if (!bodyRaw.isNullOrBlank()) {
                         exception = json.parseToJsonElement(bodyRaw).parseErrorDetail()
                     } else if (t == null && response != null) {
                         exception = Exception("Unknown error: ${response.code}")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    if (!diagnosticMode) Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                 } finally {
+                    if (response != null && !response.isSuccessful) {
+                        exception = HttpException(
+                            exception?.message ?: "Unknown error: ${response.code}",
+                            response.code
+                        )
+                    }
                     close(exception ?: Exception("Stream failed"))
                 }
             }

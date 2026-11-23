@@ -52,12 +52,13 @@ private const val TAG = "OpenAIProvider"
 
 class OpenAIProvider(
     private val client: OkHttpClient,
-    context: Context? = null
+    context: Context? = null,
+    private val diagnosticMode: Boolean = false,
 ) : Provider<ProviderSetting.OpenAI> {
     private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
 
-    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette)
-    private val responseAPI = ResponseAPI(client = client, keyRoulette = keyRoulette)
+    private val chatCompletionsAPI = ChatCompletionsAPI(client, keyRoulette, diagnosticMode)
+    private val responseAPI = ResponseAPI(client, keyRoulette, diagnosticMode)
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
         withContext(Dispatchers.IO) {
@@ -209,7 +210,7 @@ class OpenAIProvider(
                 .mergeCustomBody(params.customBody)
         )
 
-        logRequestBody(TAG, "generateImage") { requestBody.toString() }
+        if (!diagnosticMode) logRequestBody(TAG, "generateImage") { requestBody.toString() }
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/images/generations")

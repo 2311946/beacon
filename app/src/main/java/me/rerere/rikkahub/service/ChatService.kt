@@ -25,12 +25,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.agent.AgentEvent
+import me.rerere.ai.agent.AgentHooks
 import me.rerere.ai.agent.AgentFinishReason
 import me.rerere.ai.agent.RetryAttempt
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -38,6 +41,10 @@ import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.AssistantDiagnostics
+import me.rerere.rikkahub.data.ai.SafeApiFailure
+import me.rerere.rikkahub.data.ai.classifyApiFailure
+import me.rerere.rikkahub.data.ai.observedProviderFailure
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
 import me.rerere.rikkahub.data.ai.ChatTurnContext
 import me.rerere.rikkahub.data.ai.AssistantStatusManager
@@ -50,7 +57,9 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.buildCompressPrompt
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -65,6 +74,7 @@ import me.rerere.rikkahub.data.model.ChatImageGeneration
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.voiceCallIdOrNull
 import me.rerere.rikkahub.data.model.withVoiceCallMetadata
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.rikkahub.data.model.withAssistantStatusVisibility
 import me.rerere.rikkahub.data.model.bindConfig
@@ -122,6 +132,7 @@ import kotlinx.coroutines.job
 import me.rerere.mediagen.model.MediaKind
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.mediagen.provider.capabilities
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import java.net.ConnectException
@@ -129,6 +140,7 @@ import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
@@ -140,7 +152,43 @@ data class ChatError(
     val conversationId: Uuid? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val solution: ChatErrorSolution? = null,
+    val safeExplanation: String? = null,
+    val aiExplanation: String? = null,
+    val diagnosing: Boolean = false,
 )
+
+// 只在本地保存不可变 JSON，避免提供商的可变字段让旧凭据校验失效。
+private fun chatDiagnosisIdentity(
+    settings: Settings,
+    conversation: Conversation,
+    assistantId: Uuid,
+    speakerAssistantId: Uuid?,
+): JsonObject? {
+    if (settings.init) return null
+    val assistant = settings.assistants.singleOrNull { it.id == assistantId } ?: return null
+    val requestConversation = if (speakerAssistantId != null) {
+        val groups = settings.groupChats.filter { it.conversationId == conversation.id }
+        if (groups.size > 1) return null
+        conversation.groupMemberRequestConversation(settings, speakerAssistantId, groups.singleOrNull()?.chatModelId)
+    } else {
+        if (conversation.assistantId != assistantId) return null
+        conversation
+    }
+    val model = settings.getChatModelOf(requestConversation) ?: return null
+    val owners = settings.providers.filter { provider -> provider.models.any { it.id == model.id } }
+    val owner = owners.singleOrNull()?.takeIf {
+        it.enabled && it.models.count { candidate -> candidate.id == model.id } == 1
+    } ?: return null
+    val provider = model.findProvider(settings.providers)?.takeIf { it.enabled } ?: return null
+    return JsonObject(
+        mapOf(
+            "assistant" to JsonInstant.encodeToJsonElement(Assistant.serializer(), assistant),
+            "model" to JsonInstant.encodeToJsonElement(Model.serializer(), model),
+            "owner" to JsonInstant.encodeToJsonElement(ProviderSetting.serializer(), owner),
+            "provider" to JsonInstant.encodeToJsonElement(ProviderSetting.serializer(), provider),
+        )
+    )
+}
 
 enum class ChatErrorSolution {
     CheckFastModelSettings,
@@ -162,7 +210,10 @@ class ChatService(
     private val folderRepository: FolderRepository,
     private val mediaCreationService: MediaCreationService? = null,
     private val mediaCreationRepository: MediaCreationRepository? = null,
+    private val assistantDiagnostics: AssistantDiagnostics? = null,
 ) {
+    private val diagnosisJobs = ConcurrentHashMap<Uuid, Job>()
+    private val diagnosisMutex = Mutex()
     private val chatImageGenerationJobs = java.util.concurrent.ConcurrentHashMap<Uuid, Job>()
     private val activeVoiceCalls = java.util.concurrent.ConcurrentHashMap<Uuid, String>()
     /** 一轮生成的结果 */
@@ -219,11 +270,97 @@ class ChatService(
     }
 
     fun dismissError(id: Uuid) {
-        _errors.update { list -> list.filter { it.id != id } }
+        val job = synchronized(diagnosisJobs) {
+            _errors.update { list -> list.filter { it.id != id } }
+            diagnosisJobs.remove(id)
+        }
+        job?.cancel()
     }
 
     fun clearAllErrors() {
-        _errors.value = emptyList()
+        val jobs = synchronized(diagnosisJobs) {
+            _errors.value = emptyList()
+            diagnosisJobs.values.toList().also { diagnosisJobs.clear() }
+        }
+        jobs.forEach { it.cancel() }
+    }
+
+    private fun clearConversationDiagnosis(conversationId: Uuid) {
+        val jobs = synchronized(diagnosisJobs) {
+            val ids = _errors.value.filter { it.conversationId == conversationId && it.safeExplanation != null }
+                .map { it.id }.toSet()
+            _errors.update { list -> list.filterNot { it.id in ids } }
+            ids.mapNotNull { diagnosisJobs.remove(it) }
+        }
+        jobs.forEach { it.cancel() }
+    }
+
+    private suspend fun diagnoseGenerationFailure(
+        failure: SafeApiFailure,
+        turn: ChatTurnContext,
+        identity: JsonObject?,
+        session: ConversationSession,
+        speakerAssistantId: Uuid?,
+    ) {
+        val error = ChatError(
+            title = context.getString(R.string.error_title_generation),
+            error = IllegalStateException(failure.explanation),
+            conversationId = session.id,
+            safeExplanation = failure.explanation,
+            diagnosing = assistantDiagnostics != null && identity != null,
+        )
+        val incarnation = session.incarnation
+        val originContext = currentCoroutineContext()
+        val job = appScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            val diagnostics = assistantDiagnostics ?: return@launch
+            if (identity == null || !diagnosisMutex.tryLock()) return@launch
+            try {
+                currentCoroutineContext().ensureActive()
+                if (_errors.value.none { it.id == error.id } || session.incarnation != incarnation) return@launch
+                val model = JsonInstant.decodeFromJsonElement(Model.serializer(), identity.getValue("model"))
+                val provider = JsonInstant.decodeFromJsonElement(ProviderSetting.serializer(), identity.getValue("provider"))
+                // 紧邻外发读取最新设置；配置变化后不再使用旧凭据，也不切换目标。
+                val settings = settingsStore.awaitLoaded()
+                if (chatDiagnosisIdentity(settings, session.state.value, turn.assistant.id, speakerAssistantId) != identity) {
+                    return@launch
+                }
+                currentCoroutineContext().ensureActive()
+                if (_errors.value.none { it.id == error.id } || session.incarnation != incarnation) return@launch
+                val explanation = diagnostics.explain(failure, model, provider, turn.assistant.id, session.id)
+                currentCoroutineContext().ensureActive()
+                _errors.update { list ->
+                    list.map { if (it.id == error.id) it.copy(aiExplanation = explanation, diagnosing = false) else it }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 诊断失败只保留本地说明，不记录原异常、不递归生成错误卡。
+            } finally {
+                diagnosisMutex.unlock()
+            }
+        }
+        // 与停止生成共用 session 锁，确保登记前被取消的原请求不能再启动独立诊断。
+        synchronized(session) {
+            if (!originContext.job.isActive || session.incarnation != incarnation) {
+                job.cancel()
+                return
+            }
+            // 离页不让 5 秒空闲回收提前终止诊断；停止/删除仍通过辅助任务取消。
+            session.acquire()
+            job.invokeOnCompletion { session.release() }
+            session.trackAuxiliaryJob(job)
+            synchronized(diagnosisJobs) {
+                diagnosisJobs[error.id] = job
+                _errors.update { it + error }
+                job.invokeOnCompletion {
+                    diagnosisJobs.remove(error.id, job)
+                    _errors.update { list ->
+                        list.map { if (it.id == error.id) it.copy(diagnosing = false) else it }
+                    }
+                }
+            }
+            job.start()
+        }
     }
 
     /** 复用媒体服务的独立 API；持有会话引用直到结果落库，离开页面也能完成。 */
@@ -950,6 +1087,9 @@ class ChatService(
         var senderName = ""
         var wakeupTaskId: Uuid? = null
         var taskStatus = "interrupted"
+        var diagnosisTurn: ChatTurnContext? = null
+        var diagnosisIdentity: JsonObject? = null
+        var requestFailure: Throwable? = null
         try {
             val settings = settingsStore.awaitLoaded()
             // 清掉上一轮的建议；没法继续执行的工具调用发给模型会被拒绝，先去掉。
@@ -1146,12 +1286,28 @@ class ChatService(
             warnIfToolsUnavailable(turn, conversationId)
 
             val (request, hooks) = requestFactory.createAgent(turn, effectiveHistory, session.processingStatus)
+            diagnosisTurn = turn
+            diagnosisIdentity = try {
+                chatDiagnosisIdentity(settings, conversation, turn.assistant.id, speakerAssistantId)
+                    ?.takeIf { identity ->
+                        identity["model"] == JsonInstant.encodeToJsonElement(Model.serializer(), turn.model) &&
+                            identity["provider"] == JsonInstant.encodeToJsonElement(ProviderSetting.serializer(), turn.providerSetting)
+                    }
+            } catch (_: Exception) {
+                null
+            }
             var finishReason: AgentFinishReason? = null
             try {
                 val generationRequest = request.copy(
                     continueLastAssistantMessage = continueLastAssistantMessage,
                 )
-                runAgent(generationRequest, hooks).flowOn(Dispatchers.IO).collect { event ->
+                val diagnosticHooks = object : AgentHooks by hooks {
+                    override fun onProviderFailure(error: Throwable) {
+                        requestFailure = error
+                        hooks.onProviderFailure(error)
+                    }
+                }
+                runAgent(generationRequest, diagnosticHooks).flowOn(Dispatchers.IO).collect { event ->
                     when (event) {
                         is AgentEvent.MessageUpdated -> {
                             // 生成过程中只有网络重试的提示会留着，收到新内容说明重试已经成功
@@ -1270,10 +1426,17 @@ class ChatService(
             // 兜底取消 Live Update 通知（生成开始前失败时上面的 finally 不会执行）
             appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, senderName, null))
             session.messageQueue.pause()
-            e.printStackTrace()
-            addError(e, conversationId, title = context.getString(R.string.error_title_generation))
-            Logging.log(TAG, "runTurn: $e")
-            Logging.log(TAG, e.stackTraceToString())
+            currentCoroutineContext().ensureActive()
+            val safe = observedProviderFailure(e, requestFailure)?.let(::classifyApiFailure)
+            val turn = diagnosisTurn
+            if (safe != null && turn != null) {
+                diagnoseGenerationFailure(safe, turn, diagnosisIdentity, session, speakerAssistantId)
+            } else {
+                e.printStackTrace()
+                addError(e, conversationId, title = context.getString(R.string.error_title_generation))
+                Logging.log(TAG, "runTurn: $e")
+                Logging.log(TAG, e.stackTraceToString())
+            }
             return TurnResult.Failed
         } finally {
             wakeupTaskId?.let { taskId ->
@@ -1889,12 +2052,15 @@ class ChatService(
      */
     suspend fun deleteConversation(conversationId: Uuid) {
         val session = sessionManager.getOrCreate(conversationId)
+        clearConversationDiagnosis(conversationId)
         discardQueuedMessages(session)
         session.replace(newConversation(conversationId), existsInDatabase = false) { previous ->
             conversationRepo.getConversationById(conversationId)?.let { conversationRepo.deleteConversation(it) }
             // 数据库那份不知道只在内存里出现过的附件
             previous?.let { filesManager.deleteChatFiles(it.files) }
         }
+        // replace 已等待生成结束，再清一次取消边界上可能刚登记的诊断。
+        clearConversationDiagnosis(conversationId)
         sessionManager.removeIfIdle(session)
     }
 

@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,10 +94,12 @@ fun ErrorCardsDisplay(
 
             // 错误卡片列表
             errors.forEach { error ->
-                ErrorCard(
-                    error = error,
-                    onDismiss = { onDismissError(error.id) },
-                )
+                key(error.id) {
+                    ErrorCard(
+                        error = error,
+                        onDismiss = { onDismissError(error.id) },
+                    )
+                }
             }
         }
     }
@@ -114,10 +117,26 @@ fun ErrorCard(
     val checkFastModelSettings = stringResource(R.string.chat_page_check_fast_model_settings)
     val linkColor = MaterialTheme.colorScheme.primary
 
-    // 5 秒后自动消失
-    LaunchedEffect(error.id) {
-        delay(5000)
-        onDismiss()
+    val safeExplanation = error.safeExplanation
+    val summary = if (safeExplanation != null) {
+        buildString {
+            append("本地建议：")
+            append(safeExplanation)
+            error.aiExplanation?.let {
+                append("\nAI 建议：")
+                append(it)
+            }
+        }
+    } else {
+        error.error.message ?: "Unknown error"
+    }
+
+    // 诊断卡保留供阅读和手动关闭，普通错误仍在 5 秒后消失。
+    LaunchedEffect(error.id, safeExplanation) {
+        if (safeExplanation == null) {
+            delay(5000)
+            onDismiss()
+        }
     }
 
     Surface(
@@ -147,12 +166,19 @@ fun ErrorCard(
                     )
                 }
                 Text(
-                    text = error.error.message ?: "Unknown error",
+                    text = summary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (error.solution == ChatErrorSolution.CheckFastModelSettings) {
+                if (safeExplanation != null && error.diagnosing) {
+                    Text(
+                        text = "正在用原模型分析（可能产生费用）…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+                if (safeExplanation == null && error.solution == ChatErrorSolution.CheckFastModelSettings) {
                     Text(
                         text = buildAnnotatedString {
                             withLink(
@@ -183,7 +209,7 @@ fun ErrorCard(
                     scope.launch {
                         clipboard.setClipEntry(
                             ClipEntry(
-                                clipData = ClipData.newPlainText("Error", error.error.message ?: "Unknown error")
+                                clipData = ClipData.newPlainText("Error", summary)
                             )
                         )
                     }

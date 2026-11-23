@@ -89,9 +89,10 @@ private fun grokEffort(level: ReasoningLevel, modelId: String): String? {
 class GrokProvider(
     client: OkHttpClient,
     private val credentials: AccountCredentialProvider,
+    diagnosticMode: Boolean = false,
 ) : Provider<ProviderSetting.Grok> {
-    private val client = client.withAccountAuthenticator(credentials)
-    private val responseAPI = ResponseAPI(this.client)
+    private val client = client.withAccountAuthenticator(credentials, diagnosticMode)
+    private val responseAPI = ResponseAPI(this.client, diagnosticMode = diagnosticMode)
 
     override suspend fun listModels(providerSetting: ProviderSetting.Grok): List<Model> = coroutineScope {
         // 两个目录拿到一个就够用

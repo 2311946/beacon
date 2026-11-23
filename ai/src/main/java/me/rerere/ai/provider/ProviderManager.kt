@@ -15,17 +15,18 @@ class ProviderManager(
     client: OkHttpClient,
     context: Context,
     accountCredentials: AccountCredentialProvider,
+    diagnosticMode: Boolean = false,
 ) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client, context))
-        registerProvider("google", GoogleProvider(client, context))
-        registerProvider("claude", ClaudeProvider(client, context))
-        registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials))
-        registerProvider("grok", GrokProvider(client, accountCredentials))
+        registerProvider("openai", OpenAIProvider(client, context, diagnosticMode))
+        registerProvider("google", GoogleProvider(client, context, diagnosticMode))
+        registerProvider("claude", ClaudeProvider(client, context, diagnosticMode))
+        registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials, diagnosticMode))
+        registerProvider("grok", GrokProvider(client, accountCredentials, diagnosticMode))
     }
 
     /**

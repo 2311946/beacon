@@ -1,7 +1,10 @@
 package me.rerere.ai.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.catch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.buildJsonObject
@@ -146,7 +149,12 @@ internal class AgentLoop(
                 val handler = StreamChunkHandler(params.model)
                 var attempt = stepStart
                 var firstChunk: TimeMark? = null
-                request.provider.streamText(request.providerSetting, messages, params).collect { chunk ->
+                providerCall { request.provider.streamText(request.providerSetting, messages, params) }
+                    .catch { error ->
+                        currentCoroutineContext().ensureActive()
+                        if (error !is CancellationException) hooks.onProviderFailure(error)
+                        throw error
+                    }.collect { chunk ->
                     try {
                         val mark = firstChunk ?: TimeSource.Monotonic.markNow().also { firstChunk = it }
                         attempt = handler.handle(listOf(attempt), chunk).single()
@@ -174,7 +182,7 @@ internal class AgentLoop(
         var requestMark = TimeSource.Monotonic.markNow()
         val result = withRetry(request.retry, onRetry = { events.emit(AgentEvent.Retrying(it)) }) {
             requestMark = TimeSource.Monotonic.markNow()
-            request.provider.generateText(request.providerSetting, messages, params)
+            providerCall { request.provider.generateText(request.providerSetting, messages, params) }
         }
         val requestTime = requestMark.elapsedNow()
         // 和流式一样只追加 part，不并进之前步骤的文本或推理里，否则 newPartsFrom 之后就不全是这一步的内容了。
@@ -187,6 +195,16 @@ internal class AgentLoop(
         ).finishReasoning().withStepStats(base, requestTime)
         preview(generated, newPartsFrom = base.parts.size)
         return generated
+    }
+
+    private suspend fun <T> providerCall(block: suspend () -> T): T = try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        currentCoroutineContext().ensureActive()
+        hooks.onProviderFailure(error)
+        throw error
     }
 
     // 按调用顺序逐个执行，每执行完一个就更新一次，中途取消时已经执行的结果不会丢

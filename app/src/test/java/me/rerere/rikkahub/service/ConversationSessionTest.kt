@@ -100,6 +100,26 @@ class ConversationSessionTest {
     }
 
     @Test
+    fun `stopping session cancels independent lazy diagnostic without occupying reply slot`() = runTest {
+        val id = Uuid.random()
+        val original = Conversation.ofId(id)
+        val session = ConversationSession(id, original, backgroundScope, FakeConversationStore(original), {})
+        var executed = false
+        val diagnosis = backgroundScope.launch(start = CoroutineStart.LAZY) {
+            executed = true
+            awaitCancellation()
+        }
+        session.trackAuxiliaryJob(diagnosis)
+        assertFalse(session.isGenerating)
+        val jobs = session.cancelJobs()
+        jobs.forEach { it.join() }
+        diagnosis.start()
+        runCurrent()
+        assertTrue(diagnosis.isCancelled)
+        assertFalse(executed)
+    }
+
+    @Test
     fun `conversation replace cancels tracked summary without occupying reply slot`() = runTest {
         val id = Uuid.random()
         val original = Conversation.ofId(id)

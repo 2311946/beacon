@@ -19,3 +19,20 @@ fun interface AccountCredentialProvider {
         rejectedAccessToken: String?,
     ): OAuthCredential
 }
+
+/** 诊断仅读取最新本地凭据，不刷新、不写回，也不回退到请求携带的旧设置。 */
+class LocalAccountCredentialProvider(
+    private val providers: () -> List<ProviderSetting>,
+    private val now: () -> Long = System::currentTimeMillis,
+) : AccountCredentialProvider {
+    override suspend fun getCredential(
+        setting: ProviderSetting.Account,
+        rejectedAccessToken: String?,
+    ): OAuthCredential {
+        check(rejectedAccessToken == null) { "Diagnostic authentication retry is disabled" }
+        val latest = providers().singleOrNull { it.id == setting.id && it::class == setting::class && it.enabled }
+            as? ProviderSetting.Account
+        return latest?.credential?.takeIf { it.accessToken.isNotBlank() && it.expiresAt > now() }
+            ?: error("No valid local credential for diagnostics")
+    }
+}

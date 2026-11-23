@@ -107,6 +107,36 @@ val appModule = module {
     }
 
     single {
+        // 独立诊断客户端保留用户代理，不继承请求日志、自动重试或重定向。
+        val client = get<okhttp3.OkHttpClient>().newBuilder().apply {
+            interceptors().clear()
+            networkInterceptors().clear()
+        }.callTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .followRedirects(false).followSslRedirects(false)
+            .eventListener(okhttp3.EventListener.NONE)
+            .authenticator(okhttp3.Authenticator.NONE)
+            .proxyAuthenticator(okhttp3.Authenticator.NONE)
+            .cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null)
+            .build()
+        val settingsStore = get<me.rerere.rikkahub.data.datastore.SettingsStore>()
+        me.rerere.rikkahub.data.ai.AssistantDiagnostics(
+            providerManager = me.rerere.ai.provider.ProviderManager(
+                client = client,
+                context = get(),
+                accountCredentials = me.rerere.ai.provider.LocalAccountCredentialProvider(
+                    providers = { settingsStore.settingsFlow.value.providers },
+                ),
+                diagnosticMode = true,
+            ),
+            usageRecorder = get(),
+        )
+    }
+
+    single {
         ChatToolFactory(
             context = get(),
             memoryRepository = get(),
@@ -117,6 +147,7 @@ val appModule = module {
             workspaceRepository = get(),
             settingsStore = get(),
             lazyChatService = lazy { get() },
+            assistantDiagnostics = get(),
         )
     }
 
@@ -163,6 +194,7 @@ val appModule = module {
             memoryConsolidationScheduler = get(),
             translationHandler = get(),
             metaGenerator = get(),
+            assistantDiagnostics = get(),
             mcpManager = get(),
             filesManager = get(),
             folderRepository = get(),

@@ -197,10 +197,16 @@ class BackupManager(
                     require(!stagedWal.exists() || stagedDatabase.exists()) { "Backup WAL has no matching database" }
                     if (stagedDatabase.exists()) {
                         DatabaseBackup.normalize(context, stagedDatabase)
-                        // Reject unsupported schemas before publishing; run supported old migrations on the copy.
-                        val room = AppDatabaseFactory.create(context, stagedDatabase.absolutePath)
+                        // Fork version numbers are not schema identities. Repair only this copy,
+                        // then require Room's full target-schema validation before publishing it.
+                        DatabaseBackup.prepareForRestore(context, stagedDatabase)
+                        val room = AppDatabaseFactory.create(
+                            context, stagedDatabase.absolutePath, restoringBackup = true,
+                        )
                         try {
-                            DatabaseBackup.checkpoint(room.openHelper.writableDatabase)
+                            val restoredDatabase = room.openHelper.writableDatabase
+                            DatabaseBackup.validateForeignKeys(restoredDatabase)
+                            DatabaseBackup.checkpoint(restoredDatabase)
                         } finally {
                             room.close()
                         }

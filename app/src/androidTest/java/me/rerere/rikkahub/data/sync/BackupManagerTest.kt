@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import android.net.Uri
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
@@ -34,6 +36,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.koin.core.context.GlobalContext
@@ -60,6 +63,14 @@ class BackupManagerTest {
     private lateinit var liveDatabase: AppDatabase
     private lateinit var manager: BackupManager
     private val sharedPreferencesNames = mutableSetOf<String>()
+
+    @get:Rule
+    val migrationHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        AppDatabase::class.java,
+        emptyList(),
+        RequerySQLiteOpenHelperFactory(),
+    )
 
     @Before fun setUp() {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
@@ -153,6 +164,62 @@ class BackupManagerTest {
             assertEquals(null, zip.getEntry("backup_manifest.json"))
             assertEquals(null, zip.getEntry("preferences.json"))
             assertEquals(null, zip.getEntry("stickers.json"))
+        }
+    }
+
+    @Test fun legacySchema35ArchiveWithExistingStorageMountsMigratesDuringStaging() = runBlocking {
+        val source = File(directory, "schema35-with-storage-mounts")
+        val mounts = """[{"id":"shared","path":"/mnt/shared"}]"""
+        // 从真实旧 schema 建库，只预先添加曾导致恢复时重复加列的 storage_mounts。
+        migrationHelper.createDatabase(source.absolutePath, 35).use { db ->
+            db.execSQL("ALTER TABLE `workspaces` ADD COLUMN `storage_mounts` TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL(
+                "INSERT INTO workspaces (id, name, root, shell_status, created_at, updated_at, storage_mounts) " +
+                    "VALUES ('archived-workspace', 'Archived workspace', 'archived-root', 'READY', 100, 200, ?)",
+                arrayOf<Any>(mounts),
+            )
+            db.execSQL("CREATE TABLE backup_probe (text TEXT)")
+            db.execSQL("INSERT INTO backup_probe VALUES ('archived schema35')")
+            assertEquals(35, db.version)
+            DatabaseBackup.checkpoint(db)
+        }
+        DatabaseBackup.removeSidecars(source)
+        assertEquals(35, DatabaseBackup.readUserVersion(context, source))
+        val archive = File(directory, "legacy-schema35.zip")
+        ZipOutputStream(archive.outputStream()).use { zip ->
+            addFile(zip, DatabaseBackup.ARCHIVE_DATABASE, source)
+        }
+        ZipFile(archive).use { zip ->
+            assertEquals(listOf(DatabaseBackup.ARCHIVE_DATABASE), zip.entries().asSequence().map { it.name }.toList())
+        }
+
+        assertFalse(manager.hasPendingRestore())
+        assertEquals("live", probe(liveDatabase))
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        assertTrue(manager.hasPendingRestore())
+        assertEquals("live", probe(liveDatabase))
+        assertEquals(35, DatabaseBackup.readUserVersion(context, source))
+        val staged = File(context.noBackupFilesDir, "backup-restore/pending/payload/database/rikka_hub")
+        assertTrue(staged.isFile)
+        assertEquals(39, DatabaseBackup.readUserVersion(context, staged))
+        assertFalse(File(staged.path + "-wal").exists())
+        assertFalse(File(staged.path + "-shm").exists())
+
+        liveDatabase.close()
+        assertTrue(BackupManager.applyPendingRestore(context, JsonInstant))
+        assertFalse(manager.hasPendingRestore())
+        liveDatabase = AppDatabaseFactory.create(context)
+        val restored = liveDatabase.openHelper.readableDatabase
+        assertEquals(39, restored.version)
+        assertEquals("archived schema35", probe(liveDatabase))
+        restored.query(
+            "SELECT name, root, storage_mounts FROM workspaces WHERE id = 'archived-workspace'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Archived workspace", cursor.getString(0))
+            assertEquals("archived-root", cursor.getString(1))
+            assertEquals(mounts, cursor.getString(2))
+            assertFalse(cursor.moveToNext())
         }
     }
 

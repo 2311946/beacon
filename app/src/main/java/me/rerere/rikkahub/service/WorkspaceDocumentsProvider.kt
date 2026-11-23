@@ -53,7 +53,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         cursor.newRow().apply {
             add(Root.COLUMN_ROOT_ID, ROOT_ID)
             add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
-            add(Root.COLUMN_TITLE, ctx.getString(R.string.app_name))
+            add(Root.COLUMN_TITLE, ctx.getString(R.string.beacon_app_label))
             add(
                 Root.COLUMN_FLAGS,
                 Root.FLAG_LOCAL_ONLY or Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_SUPPORTS_CREATE,
@@ -70,7 +70,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         if (target.isRoot) {
             cursor.newRow().apply {
                 add(Document.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
-                add(Document.COLUMN_DISPLAY_NAME, context?.getString(R.string.app_name))
+                add(Document.COLUMN_DISPLAY_NAME, context?.getString(R.string.beacon_app_label))
                 add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR)
                 add(Document.COLUMN_FLAGS, 0)
                 add(Document.COLUMN_SIZE, null)

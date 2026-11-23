@@ -37,6 +37,9 @@ interface AgentHooks {
      */
     suspend fun prepareStep(messages: List<UIMessage>): StepRequest
 
+    /** 仅 Provider 调用失败时通知；不包含输出转换、工具和事件收集器错误。取消不通知。 */
+    fun onProviderFailure(error: Throwable) {}
+
     /**
      * 生成过程中每次发出更新之前调用，返回值只用于这一次 [AgentEvent.MessageUpdated]，不会写回循环内部。
      * 适合 think 标签这类要边生成边展示、等这一步结束才真正处理的转换；[newPartsFrom] 的含义同 [finishStep]。

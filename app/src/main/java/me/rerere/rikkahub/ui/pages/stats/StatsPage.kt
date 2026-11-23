@@ -728,6 +728,8 @@ private fun sourceLabel(source: SourceUsage): String {
             UsageSource.AUTONOMOUS_WAKEUP -> R.string.stats_page_source_autonomous_wakeup
             UsageSource.ASSISTANT_STATUS -> R.string.stats_page_source_assistant_status
             UsageSource.CALENDAR -> return "角色日历"
+            UsageSource.ERROR_DIAGNOSIS -> return "报错诊断"
+            UsageSource.HEALTH_CHECK -> return "连接自检"
         }
     )
 }

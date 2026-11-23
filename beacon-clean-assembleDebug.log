@@ -1,0 +1,889 @@
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/Users/wangxiaoxuan/.gradle/wrapper/dists/gradle-9.6.0-bin/3yr5qo1p853jn7m5o1j0u2qkd/gradle-9.6.0/lib/native-platform-0.22-milestone-29.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :build-logic:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :build-logic:compileKotlin UP-TO-DATE
+> Task :build-logic:compileJava NO-SOURCE
+> Task :build-logic:pluginDescriptors UP-TO-DATE
+> Task :build-logic:processResources UP-TO-DATE
+> Task :build-logic:classes UP-TO-DATE
+> Task :build-logic:jar UP-TO-DATE
+> Task :app:clean
+> Task :clean
+> Task :oauth:clean
+> Task :common:clean
+> Task :document:clean
+> Task :app:baselineprofile:clean UP-TO-DATE
+> Task :common:preBuild UP-TO-DATE
+> Task :common:preDebugBuild UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preGithubDebugBuild UP-TO-DATE
+> Task :document:preBuild UP-TO-DATE
+> Task :document:preDebugBuild UP-TO-DATE
+> Task :oauth:preBuild UP-TO-DATE
+> Task :oauth:preDebugBuild UP-TO-DATE
+> Task :app:generateGithubDebugAssets UP-TO-DATE
+> Task :common:generateDebugAssets UP-TO-DATE
+> Task :document:generateDebugAssets UP-TO-DATE
+> Task :oauth:generateDebugAssets UP-TO-DATE
+> Task :app:prePlayDebugBuild UP-TO-DATE
+> Task :app:generatePlayDebugAssets UP-TO-DATE
+> Task :mediagen:clean
+> Task :mediagen:preBuild UP-TO-DATE
+> Task :mediagen:preDebugBuild UP-TO-DATE
+> Task :web:clean
+> Task :mediagen:generateDebugAssets UP-TO-DATE
+> Task :web:preBuild
+> Task :web:preDebugBuild
+> Task :web:generateDebugAssets UP-TO-DATE
+> Task :material3:clean
+> Task :material3:preBuild UP-TO-DATE
+> Task :material3:preDebugBuild UP-TO-DATE
+> Task :material3:generateDebugAssets UP-TO-DATE
+> Task :speech:clean
+> Task :speech:preBuild UP-TO-DATE
+> Task :speech:preDebugBuild UP-TO-DATE
+> Task :speech:generateDebugAssets UP-TO-DATE
+> Task :ui:clean
+> Task :ui:preBuild UP-TO-DATE
+> Task :ui:preDebugBuild UP-TO-DATE
+> Task :ui:generateDebugAssets UP-TO-DATE
+
+> Task :workspace:externalNativeBuildCleanDebug
+Clean workspace-armeabi-v7a
+Clean workspace-arm64-v8a
+Clean workspace-x86
+Clean workspace-x86_64
+
+> Task :workspace:externalNativeBuildCleanRelease
+
+> Task :terminal:externalNativeBuildCleanDebug
+Clean termux-armeabi-v7a
+Clean termux-arm64-v8a
+Clean termux-x86
+Clean termux-x86_64
+
+> Task :terminal:externalNativeBuildCleanRelease
+> Task :app:mergeGithubDebugNativeDebugMetadata NO-SOURCE
+> Task :common:writeDebugAarMetadata
+> Task :document:extractDebugSupportedLocales
+> Task :material3:extractDebugSupportedLocales
+> Task :oauth:extractDebugSupportedLocales
+> Task :mediagen:extractDebugSupportedLocales
+> Task :app:generateGithubDebugBuildConfig
+> Task :speech:extractDebugSupportedLocales
+> Task :document:processDebugNavigationResources
+> Task :search:clean
+> Task :search:preBuild UP-TO-DATE
+> Task :search:preDebugBuild UP-TO-DATE
+> Task :web:extractDebugSupportedLocales
+> Task :common:generateDebugResources
+> Task :mediagen:processDebugNavigationResources
+> Task :oauth:processDebugNavigationResources
+> Task :terminal:clean
+> Task :terminal:preBuild UP-TO-DATE
+> Task :terminal:preDebugBuild UP-TO-DATE
+> Task :ui:extractDebugSupportedLocales
+> Task :app:generateGithubDebugResValues
+> Task :speech:processDebugNavigationResources
+> Task :web:processDebugNavigationResources
+> Task :material3:processDebugNavigationResources
+> Task :ui:processDebugNavigationResources
+> Task :search:extractDebugSupportedLocales
+> Task :mediagen:generateDebugResources
+> Task :material3:generateDebugResources
+> Task :search:processDebugNavigationResources
+> Task :document:generateDebugResources
+> Task :oauth:generateDebugResources
+> Task :search:generateDebugResources
+> Task :terminal:extractDebugSupportedLocales
+> Task :terminal:processDebugNavigationResources
+> Task :speech:generateDebugResources
+> Task :app:extractGithubDebugSupportedLocales
+> Task :workspace:clean
+> Task :workspace:preBuild UP-TO-DATE
+> Task :workspace:preDebugBuild UP-TO-DATE
+> Task :workspace:extractDebugSupportedLocales
+> Task :app:mapGithubDebugSourceSetPaths
+> Task :workspace:processDebugNavigationResources
+> Task :app:generateGithubDebugResources
+> Task :terminal:generateDebugResources
+> Task :ui:generateDebugResources
+> Task :common:packageDebugResources
+> Task :mediagen:packageDebugResources
+> Task :material3:packageDebugResources
+> Task :document:packageDebugResources
+> Task :common:processDebugNavigationResources
+> Task :speech:packageDebugResources
+> Task :ui:javaPreCompileDebug
+> Task :terminal:packageDebugResources
+> Task :common:javaPreCompileDebug
+> Task :document:javaPreCompileDebug
+> Task :common:extractDebugSupportedLocales
+> Task :material3:javaPreCompileDebug
+> Task :mediagen:javaPreCompileDebug
+> Task :speech:javaPreCompileDebug
+> Task :ai:clean
+> Task :ai:preBuild UP-TO-DATE
+> Task :ai:preDebugBuild UP-TO-DATE
+> Task :search:packageDebugResources
+> Task :speech:parseDebugLocalResources
+> Task :terminal:parseDebugLocalResources
+> Task :material3:parseDebugLocalResources
+> Task :mediagen:parseDebugLocalResources
+> Task :document:parseDebugLocalResources
+> Task :oauth:packageDebugResources
+> Task :ui:packageDebugResources
+> Task :common:parseDebugLocalResources
+> Task :search:javaPreCompileDebug
+> Task :search:parseDebugLocalResources
+> Task :ui:parseDebugLocalResources
+> Task :oauth:javaPreCompileDebug
+> Task :oauth:parseDebugLocalResources
+> Task :terminal:javaPreCompileDebug
+> Task :mediagen:generateDebugRFile
+> Task :common:generateDebugRFile
+> Task :document:generateDebugRFile
+> Task :material3:generateDebugRFile
+> Task :speech:generateDebugRFile
+> Task :terminal:generateDebugRFile
+> Task :search:generateDebugRFile
+> Task :web:generateDebugResources
+> Task :ui:generateDebugRFile
+> Task :workspace:generateDebugResources
+> Task :oauth:generateDebugRFile
+> Task :terminal:compileDebugKotlin NO-SOURCE
+> Task :web:packageDebugResources
+> Task :workspace:packageDebugResources
+> Task :web:javaPreCompileDebug
+> Task :web:parseDebugLocalResources
+> Task :workspace:parseDebugLocalResources
+> Task :web:generateDebugRFile
+> Task :workspace:generateDebugRFile
+> Task :app:javaPreCompileGithubDebug
+> Task :mediagen:mergeDebugAssets
+> Task :search:generateDebugAssets UP-TO-DATE
+> Task :search:mergeDebugAssets
+> Task :speech:mergeDebugAssets
+> Task :ai:checkDebugAarMetadata
+> Task :ai:mergeDebugJniLibFolders
+> Task :ai:mergeDebugNativeLibs NO-SOURCE
+> Task :ai:stripDebugDebugSymbols NO-SOURCE
+> Task :ai:copyDebugJniLibsProjectAndLocalJars
+> Task :ai:generateDebugBuildConfig
+> Task :ai:generateDebugResources
+> Task :ai:packageDebugResources
+> Task :ai:processDebugNavigationResources
+> Task :ai:parseDebugLocalResources
+> Task :ai:generateDebugRFile
+> Task :ai:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :ai:generateDebugAssets UP-TO-DATE
+> Task :ai:mergeDebugAssets
+> Task :ai:javaPreCompileDebug
+> Task :ai:prepareDebugArtProfile UP-TO-DATE
+> Task :ai:prepareLintJarForPublish UP-TO-DATE
+> Task :ai:processDebugManifest
+> Task :ai:writeDebugAarMetadata
+> Task :ai:extractDebugSupportedLocales
+> Task :ai:mapDebugSourceSetPaths
+> Task :ai:compileDebugLibraryResources
+> Task :workspace:javaPreCompileDebug
+> Task :common:mergeDebugAssets
+> Task :material3:mergeDebugAssets
+> Task :oauth:mergeDebugAssets
+> Task :web:mergeDebugAssets
+> Task :document:mergeDebugAssets
+> Task :ui:mergeDebugAssets
+> Task :workspace:generateDebugAssets UP-TO-DATE
+> Task :workspace:mergeDebugAssets
+> Task :document:writeDebugAarMetadata
+> Task :material3:writeDebugAarMetadata
+> Task :mediagen:writeDebugAarMetadata
+> Task :oauth:writeDebugAarMetadata
+> Task :search:writeDebugAarMetadata
+> Task :speech:writeDebugAarMetadata
+> Task :ui:writeDebugAarMetadata
+> Task :web:writeDebugAarMetadata
+> Task :workspace:writeDebugAarMetadata
+> Task :ai:extractDeepLinksDebug
+> Task :common:extractDeepLinksDebug
+> Task :common:processDebugManifest
+> Task :document:extractDeepLinksDebug
+> Task :document:processDebugManifest
+> Task :material3:extractDeepLinksDebug
+> Task :material3:processDebugManifest
+> Task :mediagen:extractDeepLinksDebug
+> Task :mediagen:processDebugManifest
+> Task :oauth:extractDeepLinksDebug
+> Task :oauth:processDebugManifest
+> Task :search:extractDeepLinksDebug
+> Task :search:processDebugManifest
+> Task :speech:extractDeepLinksDebug
+> Task :speech:processDebugManifest
+> Task :ui:extractDeepLinksDebug
+> Task :ui:processDebugManifest
+> Task :web:extractDeepLinksDebug
+> Task :web:processDebugManifest
+> Task :workspace:extractDeepLinksDebug
+> Task :workspace:processDebugManifest
+> Task :common:mapDebugSourceSetPaths
+> Task :common:compileDebugLibraryResources
+> Task :document:mapDebugSourceSetPaths
+> Task :document:compileDebugLibraryResources
+> Task :material3:mapDebugSourceSetPaths
+> Task :material3:compileDebugLibraryResources
+> Task :mediagen:mapDebugSourceSetPaths
+> Task :mediagen:compileDebugLibraryResources
+> Task :oauth:mapDebugSourceSetPaths
+> Task :oauth:compileDebugLibraryResources
+> Task :search:mapDebugSourceSetPaths
+> Task :search:compileDebugLibraryResources
+> Task :speech:mapDebugSourceSetPaths
+> Task :speech:compileDebugLibraryResources
+> Task :ui:mapDebugSourceSetPaths
+> Task :ui:compileDebugLibraryResources
+> Task :web:mapDebugSourceSetPaths
+> Task :web:compileDebugLibraryResources
+> Task :workspace:mapDebugSourceSetPaths
+> Task :workspace:compileDebugLibraryResources
+> Task :ai:copyDebugJniLibsProjectOnly
+> Task :common:mergeDebugJniLibFolders
+> Task :common:mergeDebugNativeLibs NO-SOURCE
+> Task :common:copyDebugJniLibsProjectOnly
+> Task :document:mergeDebugJniLibFolders
+> Task :document:mergeDebugNativeLibs NO-SOURCE
+> Task :document:copyDebugJniLibsProjectOnly
+> Task :material3:mergeDebugJniLibFolders
+> Task :material3:mergeDebugNativeLibs NO-SOURCE
+> Task :material3:copyDebugJniLibsProjectOnly
+> Task :mediagen:mergeDebugJniLibFolders
+> Task :mediagen:mergeDebugNativeLibs NO-SOURCE
+> Task :mediagen:copyDebugJniLibsProjectOnly
+> Task :oauth:mergeDebugJniLibFolders
+> Task :oauth:mergeDebugNativeLibs NO-SOURCE
+> Task :oauth:copyDebugJniLibsProjectOnly
+> Task :search:mergeDebugJniLibFolders
+> Task :search:mergeDebugNativeLibs NO-SOURCE
+> Task :search:copyDebugJniLibsProjectOnly
+> Task :speech:mergeDebugJniLibFolders
+> Task :speech:mergeDebugNativeLibs NO-SOURCE
+> Task :speech:copyDebugJniLibsProjectOnly
+> Task :ui:mergeDebugJniLibFolders
+> Task :ui:mergeDebugNativeLibs NO-SOURCE
+> Task :ui:copyDebugJniLibsProjectOnly
+> Task :web:mergeDebugJniLibFolders
+> Task :web:mergeDebugNativeLibs NO-SOURCE
+> Task :web:copyDebugJniLibsProjectOnly
+
+> Task :terminal:compileDebugJavaWithJavac
+注: /Users/wangxiaoxuan/Desktop/Development/beacon/terminal/src/main/java/com/termux/terminal/TerminalSession.java使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :terminal:bundleLibCompileToJarDebug
+> Task :terminal:generateDebugAssets UP-TO-DATE
+> Task :terminal:mergeDebugAssets
+> Task :terminal:processDebugJavaRes NO-SOURCE
+> Task :terminal:bundleLibRuntimeToDirDebug
+> Task :workspace:configureCMakeDebug[arm64-v8a]
+> Task :terminal:writeDebugAarMetadata
+> Task :terminal:extractDeepLinksDebug
+> Task :terminal:processDebugManifest
+> Task :terminal:mapDebugSourceSetPaths
+> Task :terminal:compileDebugLibraryResources
+> Task :terminal:configureCMakeDebug[arm64-v8a]
+> Task :app:generateGithubDebugGlobalSynthetics
+> Task :app:generateGithubDebugLocaleConfig
+> Task :terminal:buildCMakeDebug[arm64-v8a]
+> Task :terminal:configureCMakeDebug[armeabi-v7a]
+> Task :workspace:buildCMakeDebug[arm64-v8a]
+> Task :workspace:configureCMakeDebug[armeabi-v7a]
+> Task :app:packageGithubDebugResources
+> Task :workspace:buildCMakeDebug[armeabi-v7a]
+> Task :workspace:configureCMakeDebug[x86]
+> Task :terminal:buildCMakeDebug[armeabi-v7a]
+> Task :terminal:configureCMakeDebug[x86]
+> Task :workspace:buildCMakeDebug[x86]
+> Task :workspace:configureCMakeDebug[x86_64]
+> Task :workspace:buildCMakeDebug[x86_64]
+> Task :workspace:mergeDebugJniLibFolders
+> Task :workspace:mergeDebugNativeLibs
+> Task :workspace:copyDebugJniLibsProjectOnly
+> Task :common:checkDebugAarMetadata
+> Task :common:stripDebugDebugSymbols NO-SOURCE
+> Task :common:copyDebugJniLibsProjectAndLocalJars
+> Task :common:extractDebugAnnotations
+> Task :common:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :common:prepareDebugArtProfile UP-TO-DATE
+> Task :common:prepareLintJarForPublish UP-TO-DATE
+> Task :document:checkDebugAarMetadata
+> Task :document:stripDebugDebugSymbols NO-SOURCE
+> Task :document:copyDebugJniLibsProjectAndLocalJars
+> Task :document:extractDebugAnnotations
+> Task :document:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :document:prepareDebugArtProfile UP-TO-DATE
+> Task :document:prepareLintJarForPublish UP-TO-DATE
+> Task :material3:checkDebugAarMetadata
+> Task :material3:stripDebugDebugSymbols NO-SOURCE
+> Task :material3:copyDebugJniLibsProjectAndLocalJars
+> Task :material3:extractDebugAnnotations
+> Task :material3:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :material3:prepareDebugArtProfile UP-TO-DATE
+> Task :material3:prepareLintJarForPublish UP-TO-DATE
+> Task :mediagen:checkDebugAarMetadata
+> Task :mediagen:stripDebugDebugSymbols NO-SOURCE
+> Task :mediagen:copyDebugJniLibsProjectAndLocalJars
+> Task :mediagen:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :mediagen:prepareDebugArtProfile UP-TO-DATE
+> Task :mediagen:prepareLintJarForPublish UP-TO-DATE
+> Task :oauth:checkDebugAarMetadata
+> Task :oauth:stripDebugDebugSymbols NO-SOURCE
+> Task :terminal:buildCMakeDebug[x86]
+> Task :terminal:configureCMakeDebug[x86_64]
+> Task :oauth:copyDebugJniLibsProjectAndLocalJars
+> Task :oauth:extractDebugAnnotations
+> Task :oauth:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :oauth:prepareDebugArtProfile UP-TO-DATE
+> Task :oauth:prepareLintJarForPublish UP-TO-DATE
+> Task :search:checkDebugAarMetadata
+> Task :search:stripDebugDebugSymbols NO-SOURCE
+> Task :search:copyDebugJniLibsProjectAndLocalJars
+> Task :search:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :search:prepareDebugArtProfile UP-TO-DATE
+> Task :search:prepareLintJarForPublish UP-TO-DATE
+> Task :app:processGithubDebugNavigationResources
+> Task :speech:checkDebugAarMetadata
+> Task :app:parseGithubDebugLocalResources
+> Task :speech:stripDebugDebugSymbols NO-SOURCE
+> Task :speech:copyDebugJniLibsProjectAndLocalJars
+> Task :speech:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :speech:prepareDebugArtProfile UP-TO-DATE
+> Task :speech:prepareLintJarForPublish UP-TO-DATE
+> Task :ui:checkDebugAarMetadata
+> Task :ui:stripDebugDebugSymbols NO-SOURCE
+> Task :ui:copyDebugJniLibsProjectAndLocalJars
+> Task :ui:extractDebugAnnotations
+> Task :ui:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :ui:prepareDebugArtProfile UP-TO-DATE
+> Task :ui:prepareLintJarForPublish UP-TO-DATE
+> Task :web:checkDebugAarMetadata
+> Task :web:stripDebugDebugSymbols NO-SOURCE
+> Task :web:copyDebugJniLibsProjectAndLocalJars
+> Task :web:extractDebugAnnotations
+> Task :web:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :web:prepareDebugArtProfile UP-TO-DATE
+> Task :web:prepareLintJarForPublish UP-TO-DATE
+> Task :workspace:checkDebugAarMetadata
+> Task :app:mergeGithubDebugAssets
+> Task :workspace:stripDebugDebugSymbols
+> Task :app:generateGithubDebugRFile
+> Task :workspace:copyDebugJniLibsProjectAndLocalJars
+> Task :app:compressGithubDebugAssets
+> Task :workspace:extractDebugAnnotations
+> Task :workspace:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :workspace:prepareDebugArtProfile UP-TO-DATE
+> Task :workspace:prepareLintJarForPublish UP-TO-DATE
+> Task :app:desugarGithubDebugFileDependencies
+> Task :terminal:buildCMakeDebug[x86_64]
+> Task :terminal:mergeDebugJniLibFolders
+> Task :terminal:mergeDebugNativeLibs
+> Task :app:checkGithubDebugDuplicateClasses
+> Task :terminal:copyDebugJniLibsProjectOnly
+> Task :terminal:checkDebugAarMetadata
+> Task :terminal:extractDebugAnnotations
+> Task :terminal:extractDeepLinksForAarDebug UP-TO-DATE
+> Task :terminal:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :terminal:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :terminal:prepareDebugArtProfile UP-TO-DATE
+> Task :terminal:prepareLintJarForPublish UP-TO-DATE
+> Task :terminal:stripDebugDebugSymbols
+> Task :app:checkGithubDebugAarMetadata
+> Task :terminal:mergeDebugJavaResource
+> Task :terminal:copyDebugJniLibsProjectAndLocalJars
+> Task :terminal:syncDebugLibJars
+> Task :terminal:bundleDebugAar
+> Task :terminal:assembleDebug
+> Task :app:compileGithubDebugNavigationResources
+> Task :web:compileDebugKotlin
+> Task :web:compileDebugJavaWithJavac NO-SOURCE
+> Task :web:bundleLibCompileToJarDebug
+> Task :web:processDebugJavaRes
+> Task :web:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :web:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :web:bundleLibRuntimeToDirDebug
+> Task :web:mergeDebugJavaResource
+> Task :web:syncDebugLibJars
+> Task :web:bundleDebugAar
+> Task :web:assembleDebug
+> Task :app:createGithubDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksGithubDebug
+> Task :app:processGithubDebugMainManifest
+> Task :app:processGithubDebugManifest
+> Task :app:mergeGithubDebugJniLibFolders
+> Task :app:mergeGithubDebugResources
+> Task :app:validateSigningGithubDebug
+> Task :app:writeGithubDebugAppMetadata
+> Task :app:writeGithubDebugSigningConfigVersions
+> Task :app:mergePlayDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generatePlayDebugBuildConfig
+> Task :app:generatePlayDebugResValues
+> Task :app:extractPlayDebugSupportedLocales
+> Task :app:mapPlayDebugSourceSetPaths
+> Task :app:processGithubDebugManifestForPackage
+> Task :app:generatePlayDebugLocaleConfig
+> Task :app:mergeGithubDebugNativeLibs
+> Task :app:generatePlayDebugResources
+> Task :app:packagePlayDebugResources
+> Task :app:processPlayDebugNavigationResources
+> Task :app:parsePlayDebugLocalResources
+> Task :app:generatePlayDebugRFile
+> Task :app:javaPreCompilePlayDebug
+> Task :app:stripGithubDebugDebugSymbols
+> Task :app:mergePlayDebugAssets
+> Task :app:compressPlayDebugAssets
+> Task :app:generatePlayDebugGlobalSynthetics
+> Task :app:desugarPlayDebugFileDependencies
+> Task :app:checkPlayDebugDuplicateClasses
+> Task :app:checkPlayDebugAarMetadata
+> Task :app:compilePlayDebugNavigationResources
+> Task :oauth:compileDebugKotlin
+> Task :oauth:compileDebugJavaWithJavac NO-SOURCE
+> Task :oauth:bundleLibCompileToJarDebug
+> Task :oauth:processDebugJavaRes
+
+> Task :common:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/common/src/main/java/me/rerere/common/http/AcceptLang.kt:61:28 'field locale: Locale!' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/common/src/main/java/me/rerere/common/http/JsonExpression.kt:359:13 'when' is exhaustive so 'else' is redundant here.
+
+> Task :common:compileDebugJavaWithJavac NO-SOURCE
+> Task :common:bundleLibCompileToJarDebug
+> Task :oauth:bundleLibRuntimeToDirDebug
+> Task :ai:extractDebugAnnotations
+> Task :app:mergePlayDebugResources
+> Task :app:processGithubDebugResources
+> Task :common:processDebugJavaRes
+> Task :common:bundleLibRuntimeToDirDebug
+
+> Task :workspace:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/workspace/src/main/java/me/rerere/workspace/ssh/SshConnection.kt:251:25 'fun setPassword(p0: String!): Unit' is deprecated. Deprecated in Java.
+
+> Task :workspace:compileDebugJavaWithJavac NO-SOURCE
+> Task :workspace:bundleLibCompileToJarDebug
+> Task :workspace:processDebugJavaRes
+> Task :workspace:bundleLibRuntimeToDirDebug
+> Task :app:createPlayDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksPlayDebug
+> Task :app:processPlayDebugMainManifest
+> Task :app:processPlayDebugManifest
+> Task :app:processPlayDebugManifestForPackage
+> Task :app:mergePlayDebugJniLibFolders
+> Task :app:mergePlayDebugNativeLibs
+> Task :app:stripPlayDebugDebugSymbols
+> Task :app:validateSigningPlayDebug
+> Task :app:writePlayDebugAppMetadata
+> Task :app:writePlayDebugSigningConfigVersions
+> Task :common:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :common:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :common:mergeDebugJavaResource
+
+> Task :material3:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/material3/material-color-utilities/kotlin/dynamiccolor/ColorSpec2025.kt:902:37 Unnecessary non-null assertion (!!) on a non-null receiver of type 'DynamicColor'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/material3/material-color-utilities/kotlin/dynamiccolor/ColorSpec2025.kt:1105:36 Unnecessary non-null assertion (!!) on a non-null receiver of type 'DynamicColor'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/material3/material-color-utilities/kotlin/dynamiccolor/ColorSpec2025.kt:1251:33 Unnecessary non-null assertion (!!) on a non-null receiver of type 'DynamicColor'.
+
+> Task :common:syncDebugLibJars
+> Task :material3:compileDebugJavaWithJavac NO-SOURCE
+> Task :common:bundleDebugAar
+> Task :material3:processDebugJavaRes
+> Task :material3:bundleLibCompileToJarDebug
+> Task :common:assembleDebug
+> Task :material3:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :material3:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :material3:mergeDebugJavaResource
+> Task :material3:syncDebugLibJars
+> Task :material3:bundleDebugAar
+> Task :material3:assembleDebug
+> Task :document:compileDebugKotlin
+> Task :document:compileDebugJavaWithJavac NO-SOURCE
+> Task :material3:bundleLibRuntimeToDirDebug
+> Task :mediagen:extractDebugAnnotations
+> Task :document:processDebugJavaRes
+> Task :document:bundleLibCompileToJarDebug
+> Task :document:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :document:mergeDebugConsumerProguardFiles
+> Task :document:bundleLibRuntimeToDirDebug
+> Task :document:mergeDebugJavaResource
+> Task :document:syncDebugLibJars
+> Task :document:bundleDebugAar
+> Task :document:assembleDebug
+> Task :oauth:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :oauth:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :oauth:mergeDebugJavaResource
+> Task :oauth:syncDebugLibJars
+> Task :oauth:bundleDebugAar
+> Task :oauth:assembleDebug
+> Task :app:processPlayDebugResources
+> Task :workspace:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :workspace:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :speech:extractDebugAnnotations
+> Task :workspace:mergeDebugJavaResource
+> Task :workspace:syncDebugLibJars
+> Task :workspace:bundleDebugAar
+> Task :workspace:assembleDebug
+> Task :mediagen:compileDebugKotlin
+> Task :mediagen:compileDebugJavaWithJavac NO-SOURCE
+> Task :mediagen:processDebugJavaRes
+> Task :mediagen:bundleLibCompileToJarDebug
+> Task :mediagen:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :mediagen:mergeDebugConsumerProguardFiles
+> Task :mediagen:mergeDebugJavaResource
+> Task :mediagen:syncDebugLibJars
+> Task :mediagen:bundleDebugAar
+> Task :mediagen:assembleDebug
+> Task :mediagen:bundleLibRuntimeToDirDebug
+
+> Task :ui:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ui/src/main/java/me/rerere/ui/components/Tooltip.kt:18:44 'fun rememberTooltipPositionProvider(spacingBetweenTooltipAndAnchor: Dp = ...): PopupPositionProvider' is deprecated. Deprecated in favor of rememberTooltipPositionProvider API that takes a preferred positioning. Please use rememberTooltipPositionProvider with TooltipAnchorPosition.Above if this same behavior is desired.
+
+> Task :ui:compileDebugJavaWithJavac NO-SOURCE
+> Task :ui:processDebugJavaRes
+> Task :ui:bundleLibCompileToJarDebug
+> Task :ui:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :ui:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :ui:mergeDebugJavaResource
+> Task :ui:syncDebugLibJars
+> Task :ui:bundleLibRuntimeToDirDebug
+> Task :ui:bundleDebugAar
+> Task :ui:assembleDebug
+
+> Task :speech:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/asr/providers/MiMoASRController.kt:256:41 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/ElevenLabsTTSProvider.kt:53:42 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/FishAudioTTSProvider.kt:61:42 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/GroqTTSProvider.kt:52:56 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/StepTTSProvider.kt:79:56 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/StepTTSProvider.kt:86:39 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/SystemTTSProvider.kt:79:34 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/SystemTTSProvider.kt:112:16 Unnecessary safe call on a non-null receiver of type 'TextToSpeech'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/speech/src/main/java/me/rerere/tts/provider/providers/XAITTSProvider.kt:50:42 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+
+> Task :speech:compileDebugJavaWithJavac NO-SOURCE
+> Task :speech:processDebugJavaRes
+> Task :speech:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :speech:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :speech:bundleLibCompileToJarDebug
+> Task :speech:mergeDebugJavaResource
+> Task :speech:syncDebugLibJars
+> Task :speech:bundleDebugAar
+> Task :speech:assembleDebug
+> Task :speech:bundleLibRuntimeToDirDebug
+> Task :app:mergeExtDexGithubDebug
+> Task :app:mergeExtDexPlayDebug
+
+> Task :ai:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/claude/ClaudeProvider.kt:262:78 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/claude/ClaudeProvider.kt:265:40 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/claude/ClaudeProvider.kt:321:90 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/claude/ClaudeProvider.kt:324:36 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/google/GoogleProvider.kt:157:41 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/google/GoogleProvider.kt:226:90 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/google/GoogleProvider.kt:229:36 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/ChatCompletionsAPI.kt:109:90 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/ChatCompletionsAPI.kt:112:36 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:75:78 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:78:40 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:165:82 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:168:36 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:213:81 Redundant call of conversion method.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:227:82 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:298:78 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/provider/providers/openai/OpenAIProvider.kt:352:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/Message.kt:294:30 'data class ToolCall : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/Message.kt:295:30 'data class ToolResult : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/Message.kt:296:30 'data object Search : UIMessagePart' is deprecated. Deprecated.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/UIMessagePart.kt:140:26 'data class ToolCall : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/UIMessagePart.kt:140:37 'data class ToolCall : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/ui/UIMessagePart.kt:141:20 'constructor(toolCallId: String, toolName: String, arguments: String, approvalState: ToolApprovalState = ..., metadata: JsonObject? = ...): UIMessagePart.ToolCall' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/ai/src/main/java/me/rerere/ai/util/ErrorParser.kt:47:9 'when' is exhaustive so 'else' is redundant here.
+
+> Task :ai:compileDebugJavaWithJavac
+> Task :ai:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :ai:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :ai:processDebugJavaRes
+> Task :ai:mergeDebugJavaResource
+> Task :ai:bundleLibCompileToJarDebug
+> Task :ai:syncDebugLibJars
+> Task :ai:bundleDebugAar
+> Task :ai:assembleDebug
+> Task :search:extractDebugAnnotations
+> Task :ai:bundleLibRuntimeToDirDebug
+
+> Task :search:compileDebugKotlin
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/GrokSearchService.kt:136:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/LinkUpService.kt:107:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/LinkUpService.kt:151:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/MetasoSearchService.kt:76:44 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/MetasoSearchService.kt:97:46 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/PerplexitySearchService.kt:117:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/RikkaHubSearchService.kt:85:74 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/SearXNGService.kt:114:46 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/ZhipuSearchService.kt:75:44 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/search/src/main/java/me/rerere/search/ZhipuSearchService.kt:95:38 Unnecessary safe call on a non-null receiver of type 'ResponseBody'.
+
+> Task :search:compileDebugJavaWithJavac NO-SOURCE
+> Task :search:processDebugJavaRes
+> Task :search:mergeDebugGeneratedProguardFiles UP-TO-DATE
+> Task :search:mergeDebugConsumerProguardFiles UP-TO-DATE
+> Task :search:mergeDebugJavaResource
+> Task :search:bundleLibCompileToJarDebug
+> Task :search:syncDebugLibJars
+> Task :search:bundleDebugAar
+> Task :search:assembleDebug
+> Task :search:bundleLibRuntimeToDirDebug
+> Task :app:mergeLibDexGithubDebug
+> Task :app:mergeLibDexPlayDebug
+> Task :app:kspGithubDebugKotlin
+> Task :app:kspPlayDebugKotlin
+> Task :app:compileGithubDebugKotlin
+> Task :app:compilePlayDebugKotlin
+w: Opt-in requirement marker 'androidx.navigation3.runtime.ExperimentalNavigation3Api' is unresolved. Make sure it's present in the module dependencies.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt:390:57 'static field USAGE_NOTIFICATION_COMMUNICATION_INSTANT: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/ai/tools/AssistantHealthTool.kt:90:18 Unnecessary safe call on a non-null receiver of type 'ProviderSetting'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/datastore/SettingsExt.kt:65:33 Unnecessary safe call on a non-null receiver of type 'Uuid'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/MigrationUtils.kt:85:45 Cast is redundant.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_11_12.kt:74:33 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_36_37.kt:96:25 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_36_37.kt:107:25 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:260:30 'data object Search : UIMessagePart' is deprecated. Deprecated.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:261:30 'data class ToolCall : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:262:30 'data class ToolResult : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:346:24 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/sync/webdav/WebDavClient.kt:377:43 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/sync/webdav/WebDavClient.kt:381:51 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt:1243:74 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ProactiveMessageWorker.kt:226:105 Unnecessary safe call on a non-null receiver of type 'Conversation'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ToolApprovalResume.kt:39:28 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/AssistantPicker.kt:273:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:46:13 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:48:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:48:36 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:52:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:54:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:39 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:46 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:56:42 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:56:59 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:57:37 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:57:54 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:60:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:69:13 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:71:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:72:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:73:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:74:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:75:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:76:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:78:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:78:27 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:79:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:79:20 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:80:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:80:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:81:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:81:18 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:82:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:82:20 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:83:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:83:26 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/FilesPicker.kt:292:87 Unnecessary safe call on a non-null receiver of type 'WorkspaceEntity'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ModelList.kt:725:14 This declaration is in a preview state and can be changed in a backwards-incompatible manner with a best-effort migration. Its usage should be marked with '@kotlinx.coroutines.FlowPreview' or '@OptIn(kotlinx.coroutines.FlowPreview::class)' if you accept the drawback of relying on preview API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceCwdPicker.kt:128:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceSelectSheet.kt:90:13 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceSelectSheet.kt:120:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:152:48 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:154:39 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:155:41 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:182:62 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:184:63 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:503:36 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessageReasoning.kt:219:53 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ui/CardGroup.kt:294:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ui/UpdateCard.kt:165:29 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/assistant/detail/AssistantBasicPage.kt:500:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/ChatPage.kt:175:30 'fun currentWindowDpSize(): DpSize' is deprecated. Going to be removed in the next version. Prefer LocalWindowInfo instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatListPage.kt:159:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatPage.kt:831:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:233:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:252:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:272:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:341:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:359:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:422:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsVM.kt:159:108 Unnecessary non-null assertion (!!) on a non-null receiver of type 'GroupChat'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:100:51 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:116:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:134:30 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:138:33 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:173:30 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:174:36 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:185:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:186:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/extensions/workspace/WorkspaceTerminalSession.kt:186:71 'static field SHOW_IMPLICIT: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/history/HistoryPage.kt:192:9 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/imggen/ImgGenPage.kt:548:28 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/ProactiveMessageSettingsPage.kt:128:17 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/ProactiveMessageSettingsPage.kt:163:17 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:178:29 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:204:29 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:227:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesUIPage.kt:176:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesUIPage.kt:334:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:323:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:590:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:601:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:612:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingWebPage.kt:79:28 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/components/QuotaQueryOption.kt:151:95 Cast is redundant.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/share/handler/ShareHandlerPage.kt:98:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:85:16 'fun unsafeCheckOpNoThrow(p0: String, p1: Int, p2: String): Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:203:49 'static field ACTION_MEDIA_SCANNER_SCAN_FILE: String' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:256:49 'static field ACTION_MEDIA_SCANNER_SCAN_FILE: String' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/NsdServiceRegistrar.kt:118:41 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/NsdServiceRegistrar.kt:119:35 'val ipAddress: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/routes/FilesRoutes.kt:69:26 'val dispose: () -> Unit' is deprecated. Use release instead.
+
+> Task :app:compileGithubDebugKotlin
+w: Opt-in requirement marker 'androidx.navigation3.runtime.ExperimentalNavigation3Api' is unresolved. Make sure it's present in the module dependencies.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/github/java/me/rerere/rikkahub/phoneuse/PhoneUseAccessibilityService.kt:116:62 'var isChecked: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/RikkaHubApp.kt:390:57 'static field USAGE_NOTIFICATION_COMMUNICATION_INSTANT: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/ai/tools/AssistantHealthTool.kt:90:18 Unnecessary safe call on a non-null receiver of type 'ProviderSetting'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/datastore/SettingsExt.kt:65:33 Unnecessary safe call on a non-null receiver of type 'Uuid'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/MigrationUtils.kt:85:45 Cast is redundant.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_11_12.kt:74:33 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_36_37.kt:96:25 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/db/migrations/Migration_36_37.kt:107:25 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in language version 2.6. See https://youtrack.jetbrains.com/issue/KTLC-399.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:260:30 'data object Search : UIMessagePart' is deprecated. Deprecated.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:261:30 'data class ToolCall : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:262:30 'data class ToolResult : UIMessagePart' is deprecated. Use UIMessagePart.Tool instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt:346:24 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/sync/webdav/WebDavClient.kt:377:43 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/data/sync/webdav/WebDavClient.kt:381:51 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ChatService.kt:1243:74 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ProactiveMessageWorker.kt:226:105 Unnecessary safe call on a non-null receiver of type 'Conversation'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/service/ToolApprovalResume.kt:39:28 Unnecessary safe call on a non-null receiver of type 'ConversationConfig'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/AssistantPicker.kt:273:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:46:13 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:48:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:48:36 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:52:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:54:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:39 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:55:46 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:56:42 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:56:59 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:57:37 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:57:54 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:60:21 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:69:13 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:71:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:72:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:73:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:74:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:75:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:76:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:78:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:78:27 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:79:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:79:20 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:80:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:80:25 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:81:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:81:18 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:82:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:82:20 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:83:9 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ChatInputHaze.kt:83:26 Experimental Haze API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/FilesPicker.kt:292:87 Unnecessary safe call on a non-null receiver of type 'WorkspaceEntity'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ModelList.kt:725:14 This declaration is in a preview state and can be changed in a backwards-incompatible manner with a best-effort migration. Its usage should be marked with '@kotlinx.coroutines.FlowPreview' or '@OptIn(kotlinx.coroutines.FlowPreview::class)' if you accept the drawback of relying on preview API
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceCwdPicker.kt:128:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceSelectSheet.kt:90:13 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ai/WorkspaceSelectSheet.kt:120:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:152:48 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:154:39 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:155:41 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:182:62 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:184:63 Unnecessary safe call on a non-null receiver of type 'JsonObject'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt:503:36 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessageReasoning.kt:219:53 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ui/CardGroup.kt:294:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/components/ui/UpdateCard.kt:165:29 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/assistant/detail/AssistantBasicPage.kt:500:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/ChatPage.kt:175:30 'fun currentWindowDpSize(): DpSize' is deprecated. Going to be removed in the next version. Prefer LocalWindowInfo instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatListPage.kt:159:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatPage.kt:831:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:233:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:252:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:272:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:341:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:359:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsPage.kt:422:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/GroupChatSettingsVM.kt:159:108 Unnecessary non-null assertion (!!) on a non-null receiver of type 'GroupChat'.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:100:51 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:116:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:134:30 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:138:33 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:173:30 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:174:36 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:185:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/chat/VoiceCallDialog.kt:186:34 'var isSpeakerphoneOn: Boolean' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/extensions/workspace/WorkspaceTerminalSession.kt:186:71 'static field SHOW_IMPLICIT: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/history/HistoryPage.kt:192:9 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/imggen/ImgGenPage.kt:548:28 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/ProactiveMessageSettingsPage.kt:128:17 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/ProactiveMessageSettingsPage.kt:163:17 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:178:29 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:204:29 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesGeneralPage.kt:227:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesUIPage.kt:176:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingPreferencesUIPage.kt:334:25 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:323:5 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:590:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:601:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingThemePage.kt:612:21 'fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = ..., enabled: Boolean = ..., valueRange: ClosedFloatingPointRange<Float> = ..., steps: Int = ..., onValueChangeFinished: (() -> Unit)? = ..., colors: SliderColors = ..., interactionSource: MutableInteractionSource = ...): Unit' is deprecated. Use the Slider overload that accepts SliderState, onValueChange, and onValueChangeFinished instead.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingWebPage.kt:79:28 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/components/QuotaQueryOption.kt:151:95 Cast is redundant.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/ui/pages/share/handler/ShareHandlerPage.kt:98:21 'fun ListItem(headlineContent: ComposableFunction0<Unit>, modifier: Modifier = ..., overlineContent: ComposableFunction0<Unit>? = ..., supportingContent: ComposableFunction0<Unit>? = ..., leadingContent: ComposableFunction0<Unit>? = ..., trailingContent: ComposableFunction0<Unit>? = ..., colors: ListItemColors = ..., tonalElevation: Dp = ..., shadowElevation: Dp = ...): Unit' is deprecated. Use the overload where `headlineContent` is now a trailing `content` lambda.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:85:16 'fun unsafeCheckOpNoThrow(p0: String, p1: Int, p2: String): Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:203:49 'static field ACTION_MEDIA_SCANNER_SCAN_FILE: String' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/utils/ContextUtil.kt:256:49 'static field ACTION_MEDIA_SCANNER_SCAN_FILE: String' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/NsdServiceRegistrar.kt:118:41 'val connectionInfo: WifiInfo!' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/NsdServiceRegistrar.kt:119:35 'val ipAddress: Int' is deprecated. Deprecated in Java.
+w: file:///Users/wangxiaoxuan/Desktop/Development/beacon/app/src/main/java/me/rerere/rikkahub/web/routes/FilesRoutes.kt:69:26 'val dispose: () -> Unit' is deprecated. Use release instead.
+
+> Task :app:compileGithubDebugJavaWithJavac
+> Task :app:processGithubDebugJavaRes
+> Task :app:mergeGithubDebugJavaResource
+> Task :app:dexBuilderGithubDebug
+> Task :app:compilePlayDebugJavaWithJavac
+> Task :app:processPlayDebugJavaRes
+> Task :app:mergeProjectDexGithubDebug
+> Task :app:mergePlayDebugJavaResource
+> Task :app:dexBuilderPlayDebug
+> Task :app:mergeProjectDexPlayDebug
+> Task :app:packageGithubDebug
+> Task :app:createGithubDebugApkListingFileRedirect
+> Task :app:assembleGithubDebug
+> Task :app:packagePlayDebug
+> Task :app:createPlayDebugApkListingFileRedirect
+> Task :app:assemblePlayDebug
+> Task :app:assembleDebug
+
+[Incubating] Problems report is available at: file:///Users/wangxiaoxuan/Desktop/Development/beacon/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 1m 49s
+488 actionable tasks: 425 executed, 63 up-to-date

@@ -47,6 +47,7 @@ class ChatToolFactory(
     private val workspaceRepository: WorkspaceRepository,
     private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
     private val lazyChatService: Lazy<me.rerere.rikkahub.service.ChatService>,
+    private val assistantDiagnostics: me.rerere.rikkahub.data.ai.AssistantDiagnostics,
 ) {
     suspend fun createTools(
         settings: Settings,
@@ -57,6 +58,17 @@ class ChatToolFactory(
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val tools = buildList {
+            add(buildBeaconHelpTool())
+            add(buildAssistantHealthTool(
+                assistantId = assistant.id,
+                conversation = conversation,
+                readSettings = settingsStore::awaitLoaded,
+                memoryRepository = memoryRepository,
+                mcpManager = mcpManager,
+                diagnostics = assistantDiagnostics,
+                readConversation = { lazyChatService.value.getConversation(conversation.id) },
+                readCurrentSettings = { settingsStore.settingsFlow.value },
+            ))
             addAll(buildAssistantConfigTools(assistant) {
                 createAssistantConfigTool(
                     assistantId = assistant.id,

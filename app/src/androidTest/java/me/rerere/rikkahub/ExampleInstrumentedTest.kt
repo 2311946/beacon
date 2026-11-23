@@ -17,6 +17,14 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("me.rerere.rikkahub", appContext.packageName)
+        assertEquals(BuildConfig.APPLICATION_ID, appContext.packageName)
+        assertEquals(
+            if (BuildConfig.DEBUG) "me.xuanxuan.beacon.dev" else "me.xuanxuan.beacon",
+            appContext.packageName,
+        )
+        assertEquals(
+            if (BuildConfig.DEBUG) "Beacon Dev" else "Beacon",
+            appContext.getString(R.string.beacon_app_label),
+        )
     }
 }

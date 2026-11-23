@@ -8,9 +8,9 @@ val Migration_38_39 = object : Migration(38, 39) {
     override fun migrate(db: SupportSQLiteDatabase) {
         DatabaseMigrationTracker.onMigrationStart(38, 39)
         try {
-            db.execSQL("ALTER TABLE `memory_chunk` ADD COLUMN `embedding` BLOB")
-            db.execSQL("ALTER TABLE `memory_chunk` ADD COLUMN `embedding_profile` TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE `memory_chunk` ADD COLUMN `embedding_dimensions` INTEGER NOT NULL DEFAULT 0")
+            db.addColumnIfMissing("memory_chunk", "embedding", "BLOB")
+            db.addColumnIfMissing("memory_chunk", "embedding_profile", "TEXT NOT NULL DEFAULT ''")
+            db.addColumnIfMissing("memory_chunk", "embedding_dimensions", "INTEGER NOT NULL DEFAULT 0")
         } finally {
             DatabaseMigrationTracker.onMigrationEnd()
         }

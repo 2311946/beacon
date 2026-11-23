@@ -5,6 +5,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteDatabaseConfiguration
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
+import me.rerere.rikkahub.data.db.migrations.RestoreSchemaCompatibility
 import java.io.File
 
 internal object DatabaseBackup {
@@ -58,6 +59,40 @@ internal object DatabaseBackup {
             }
         }
         removeSidecars(databaseFile)
+    }
+
+    /** The caller must pass an extracted staging copy, never the live/source database. */
+    fun prepareForRestore(context: Context, databaseFile: File) {
+        val configuration = SQLiteConfiguration.configure(
+            context,
+            SQLiteDatabaseConfiguration(databaseFile.absolutePath, SQLiteDatabase.OPEN_READWRITE),
+        )
+        SQLiteDatabase.openDatabase(configuration, null) {
+            error("Backup database is corrupt")
+        }.use { database ->
+            require(database.version in 1..39) { "Unsupported backup database version: ${database.version} (Beacon: 39)" }
+            if (database.version == 39) {
+                database.beginTransaction()
+                try {
+                    RestoreSchemaCompatibility.repair(database)
+                    // Even a matching hash is not proof after cross-fork structural repairs.
+                    // Absence makes Room validate EVERY target table before writing its identity.
+                    // Do not write a new hash ourselves or lower/change user_version.
+                    database.execSQL("DROP TABLE IF EXISTS `room_master_table`")
+                    database.setTransactionSuccessful()
+                } finally {
+                    database.endTransaction()
+                }
+            }
+            checkpoint(database)
+        }
+        removeSidecars(databaseFile)
+    }
+
+    fun validateForeignKeys(database: SupportSQLiteDatabase) {
+        database.query("PRAGMA foreign_key_check").use { cursor ->
+            check(!cursor.moveToFirst()) { "Backup database contains invalid foreign key references" }
+        }
     }
 
     fun checkpoint(database: SupportSQLiteDatabase) {
